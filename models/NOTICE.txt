@@ -1,0 +1,4 @@
+selfie_segmentation.tflite / selfie_segmentation_landscape.tflite
+출처: MediaPipe Selfie Segmentation (@mediapipe/selfie_segmentation) — Apache License 2.0
+변경 사항: MediaPipe Tasks API 에서 쓸 수 있도록 TFLite 메타데이터(입력 정규화 0~255→0~1, 라벨 'person')만 추가.
+모델 가중치는 변경하지 않았습니다.
