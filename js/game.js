@@ -266,14 +266,14 @@ export class Engine {
       this.catches++; this.catchPoints += pts;
       it.state = 'caught'; it.st = 0;
       this._burst(it.x, it.y, 14, ['#ffd93d', '#ffffff', '#ff8fab', '#7ae7c7']);
-      this.texts.push({ x: it.x, y: it.y - it.r, text: `+${pts}`, life: 0, max: 0.9, size: 44, color: '#fff' });
-      if (this.combo >= 3) this.texts.push({ x: it.x, y: it.y - it.r - 46, text: `콤보 ${this.combo}!`, life: 0, max: 0.9, size: 30, color: '#ffd93d' });
+      this.texts.push({ x: it.x, y: it.y - it.r, text: `+${pts}`, life: 0, max: 0.9, size: 56, color: '#fff' });
+      if (this.combo >= 3) this.texts.push({ x: it.x, y: it.y - it.r - 58, text: `콤보 ${this.combo}!`, life: 0, max: 0.9, size: 38, color: '#ffd93d' });
       this.sound.catch(this.combo);
     } else if (it.kind === 'heart') {
       it.state = 'caught'; it.st = 0;
       if (this.lives < RULES.LIVES) this.lives++;
       this._burst(it.x, it.y, 16, ['#ff4d6d', '#ffb3c6', '#ffffff']);
-      this.texts.push({ x: it.x, y: it.y - it.r, text: '생명 +1', life: 0, max: 1, size: 40, color: '#ff8fab' });
+      this.texts.push({ x: it.x, y: it.y - it.r, text: '생명 +1', life: 0, max: 1, size: 50, color: '#ff8fab' });
       this.sound.heart();
     } else {
       it.state = 'boom'; it.st = 0;
@@ -372,11 +372,12 @@ export class Engine {
     else if (this.state === 'countdown') this._drawCountdown(c);
     if (this.state === 'play' || this.state === 'paused' || this.state === 'countdown' || this.state === 'over') this._drawHud(c, now);
     if (this.state === 'play' && this.absent) this._drawAbsent(c);
+    if (inp?.kind === 'camera' && inp.close?.on && ['lobby', 'countdown', 'play'].includes(this.state) && !this.absent) this._drawTooClose(c, now);
     if (this.banner) this._drawBanner(c);
     if (this.debug && inp?.kind === 'camera') {
-      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 230, 100, 460, 26);
+      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 260, 132, 520, 26);
       c.fillStyle = '#fff'; c.font = `600 16px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(`cam ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate}/${inp.poseDelegate} · ${inp.people}명 손${inp.hands.length}`, W / 2, 113);
+      c.fillText(`인식 ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate}/${inp.poseDelegate}${inp.threaded ? ' · 별도처리' : ''} · ${inp.people}명 손${inp.hands.length}`, W / 2, 145);
     }
   }
 
@@ -486,31 +487,48 @@ export class Engine {
     c.fillStyle = color; c.fillText(s, x, y);
   }
 
+  // TV로 멀리서 보기 좋게 큼직하게 (예전 대비 약 1.3배)
   _drawHud(c, now) {
     const W = this.W;
     // 점수
-    this._panel(c, 20, 18, 270, 92);
-    this._text(c, '점수', 44, 46, 22, '#7a6b8f', 'left', 800);
-    this._text(c, formatNum(this.score), 44, 82, 44, INK, 'left');
-    if (this.combo >= 2 && this.state === 'play') this._text(c, `콤보 x${this.combo}`, 276, 46, 22, '#ff6b6b', 'right', 900);
+    this._panel(c, 16, 14, 330, 116, 26);
+    this._text(c, '점수', 42, 50, 28, '#7a6b8f', 'left', 800);
+    this._text(c, formatNum(this.score), 42, 98, 58, INK, 'left');
+    if (this.combo >= 2 && this.state === 'play') this._text(c, `콤보 x${this.combo}`, 330, 50, 28, '#ff6b6b', 'right', 900);
     // 생명
-    const hw = 64 * RULES.LIVES + 30;
-    this._panel(c, W - hw - 20, 18, hw, 72);
+    const step = 68, hw = step * RULES.LIVES + 28;
+    this._panel(c, W - hw - 16, 14, hw, 96, 26);
     for (let i = 0; i < RULES.LIVES; i++) {
-      const x = W - hw - 20 + 46 + i * 64, y = 54, on = i < this.lives;
+      const x = W - hw - 16 + 48 + i * step, y = 62, on = i < this.lives;
       const s = on && i === this.lives - 1 && this.lives <= 2 ? 1 + 0.08 * Math.sin(now / 120) : 1;
-      this._heart(c, x, y, 24 * s, on ? '#ff4d6d' : 'rgba(120,110,140,0.35)');
+      this._heart(c, x, y, 31 * s, on ? '#ff4d6d' : 'rgba(120,110,140,0.35)');
     }
     // 스테이지·남은 시간·레벨
-    const cx = W / 2, pw = 380;
-    this._panel(c, cx - pw / 2, 18, pw, 84);
+    const cx = W / 2, pw = 490;
+    this._panel(c, cx - pw / 2, 14, pw, 112, 26);
     const baby = this.difficulty === 'baby' ? '🍼 ' : '';
-    this._text(c, `${baby}${this.stage?.emoji || ''} 스테이지 ${this.stageNum}`, cx, 44, 28);
+    this._text(c, `${baby}${this.stage?.emoji || ''} 스테이지 ${this.stageNum}`, cx, 52, 36);
     const remainSec = Math.max(0, Math.ceil(RULES.STAGE_SEC - this.stageT));
-    this._text(c, `남은 ${remainSec}초 · Lv.${this.level}`, cx, 74, 20, remainSec <= 10 && this.rest <= 0 ? '#e8505a' : '#7a6b8f', 'center', 800);
+    this._text(c, `남은 ${remainSec}초 · Lv.${this.level}`, cx, 92, 27, remainSec <= 10 && this.rest <= 0 ? '#e8505a' : '#7a6b8f', 'center', 800);
     const k = clamp(this.stageT / RULES.STAGE_SEC, 0, 1);
-    c.fillStyle = '#ece4f7'; c.beginPath(); c.roundRect(cx - pw / 2 + 18, 88, pw - 36, 6, 3); c.fill();
-    c.fillStyle = k > 0.8 ? '#ff6b6b' : '#3ecfb2'; c.beginPath(); c.roundRect(cx - pw / 2 + 18, 88, (pw - 36) * k, 6, 3); c.fill();
+    c.fillStyle = '#ece4f7'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, 110, pw - 44, 8, 4); c.fill();
+    c.fillStyle = k > 0.8 ? '#ff6b6b' : '#3ecfb2'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, 110, (pw - 44) * k, 8, 4); c.fill();
+  }
+
+  // 카메라 바로 앞에 붙은 사람에게 말풍선
+  _drawTooClose(c, now) {
+    const cl = this.input.close, W = this.W, H = this.H;
+    const bw = 380, bh = 86;
+    const x = clamp(cl.x - bw / 2, 20, W - bw - 20);
+    const y = clamp(cl.y - 230, 150, H - bh - 140) + Math.sin(now / 220) * 6;
+    c.save();
+    c.fillStyle = 'rgba(30,20,60,0.35)'; c.beginPath(); c.roundRect(x, y + 6, bw, bh, 40); c.fill();
+    c.fillStyle = '#fff7c2'; c.beginPath(); c.roundRect(x, y, bw, bh, 40); c.fill();
+    const tx = clamp(cl.x, x + 60, x + bw - 60);
+    c.beginPath(); c.moveTo(tx - 22, y + bh - 2); c.lineTo(tx, y + bh + 30); c.lineTo(tx + 22, y + bh - 2); c.closePath(); c.fill();
+    c.lineWidth = 5; c.strokeStyle = INK; c.beginPath(); c.roundRect(x, y, bw, bh, 40); c.stroke();
+    this._text(c, '한 걸음 뒤로! 👣', x + bw / 2, y + bh / 2 + 2, 40, '#e8505a');
+    c.restore();
   }
 
   _heart(c, x, y, s, color) {
@@ -523,8 +541,8 @@ export class Engine {
 
   _drawLobby(c, now) {
     const W = this.W, H = this.H, st = this.stage, inp = this.input;
-    this._panel(c, W / 2 - 280, 24, 560, 84, 42);
-    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.name}`, W / 2, 66, 36);
+    this._panel(c, W / 2 - 320, 22, 640, 96, 48);
+    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.name}`, W / 2, 70, 44);
     const B = this.lobbyBubble();
     const bob = Math.sin(now / 400) * 8;
     c.save(); c.translate(B.x, B.y + bob);
@@ -543,13 +561,14 @@ export class Engine {
     let msg;
     if (inp?.kind === 'camera') {
       if (!inp.present) msg = '카메라에 몸이 다 보이게 2~3걸음 뒤로 서 주세요';
+      else if (inp.close?.on && !inp.hands.length) msg = '카메라에 너무 가까워요! 팔이 보이게 뒤로 가 주세요';
       else if (inp.poseOk && !inp.hands.length) msg = `${inp.people}명 인식! 손이 보이게 팔을 들어 주세요`;
       else msg = inp.poseOk ? `${inp.people}명 인식! 손을 들어 노란 풍선을 터치하면 시작` : '준비 완료! 노란 풍선을 손으로 터치하면 시작해요';
     }
     else msg = '풍선을 눌러서 시작! (터치 모드)';
-    const tw = Math.min(W - 80, msg.length * 30 + 80);
-    this._panel(c, W / 2 - tw / 2, H - 104, tw, 72, 36, 'rgba(255,255,255,0.94)');
-    this._text(c, msg, W / 2, H - 68, 30);
+    const tw = Math.min(W - 80, msg.length * 34 + 90);
+    this._panel(c, W / 2 - tw / 2, H - 116, tw, 84, 42, 'rgba(255,255,255,0.94)');
+    this._text(c, msg, W / 2, H - 74, 34);
   }
 
   _drawCountdown(c) {
