@@ -14,6 +14,9 @@ export const CONFIG = Object.freeze({
   //  kind: 'person'  → 마스크 값이 "사람일 확률" (기본 selfie 모델)
   //        'multiclass' → selfie_multiclass 모델 (0번 마스크가 배경)
   MODEL: { path: 'models/selfie_segmentation.tflite', kind: 'person' },
+  // 자세(포즈) 인식: 멀리 있는 사람 인식 + 손 위치 (잡기 판정은 손으로만). 최대 인원
+  POSE_MODELS: { full: 'models/pose_landmarker_full.task', lite: 'models/pose_landmarker_lite.task' },
+  MAX_PEOPLE: 6,
   WASM_PATH: 'vendor/mediapipe/wasm',
 
   // 직접 만든 이미지 사용 여부
@@ -53,9 +56,10 @@ export const DIFFICULTY = Object.freeze({
   baby: { label: '아기 모드', speed: 0.68, speedCap: 1.9, interval: 1.15, bomb: 0.5, bombCap: 0.2, heart: 0.05, radius: 8 },
 });
 
-// 화질 프리셋: 세그멘테이션 입력 크기
+// 화질 프리셋: 사람 분리 입력 크기 + 자세 인식 입력 크기·모델
 export const QUALITY = Object.freeze({
-  high: { segW: 384, segH: 216, label: '고화질' },
-  normal: { segW: 288, segH: 162, label: '표준' },
-  low: { segW: 224, segH: 126, label: '절전' },
+  best: { segW: 384, segH: 216, poseW: 640, poseH: 360, pose: 'full', label: '최고' },
+  high: { segW: 384, segH: 216, poseW: 512, poseH: 288, pose: 'lite', label: '고화질' },
+  normal: { segW: 288, segH: 162, poseW: 448, poseH: 252, pose: 'lite', label: '표준' },
+  low: { segW: 224, segH: 126, poseW: 384, poseH: 216, pose: 'lite', label: '절전' },
 });

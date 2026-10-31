@@ -18,8 +18,9 @@ const sound = new Sound();
 const engine = new Engine(canvas, sound);
 
 // ── 설정 ──
-const DEFAULTS = { mode: 'tv', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
+const DEFAULTS = { facing: 'environment', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
 const settings = { ...DEFAULTS, ...store.get('wc.settings.v1', {}) };
+if (settings.mode) { settings.facing = settings.mode === 'phone' ? 'user' : 'environment'; delete settings.mode; } // 예전 설정 이전
 const saveSettings = () => store.set('wc.settings.v1', settings);
 const applySettings = () => {
   sound.sfxOn = settings.sfx; sound.bgmOn = settings.bgm;
@@ -64,10 +65,10 @@ function renderRecent() {
 function saveRecent(t) { store.set('wc.teams.v1', [t, ...recent().filter((x) => x !== t)].slice(0, 6)); }
 
 function renderMode() {
-  $$('.seg-btn[data-mode]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === settings.mode)));
+  $$('.seg-btn[data-facing]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.facing === settings.facing)));
   $$('.seg-btn[data-diff]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.diff === settings.difficulty)));
 }
-$$('.seg-btn[data-mode]').forEach((b) => b.addEventListener('click', () => { settings.mode = b.dataset.mode; settings.cameraId = ''; saveSettings(); renderMode(); }));
+$$('.seg-btn[data-facing]').forEach((b) => b.addEventListener('click', () => { settings.facing = b.dataset.facing; settings.cameraId = ''; saveSettings(); renderMode(); }));
 $$('.seg-btn[data-diff]').forEach((b) => b.addEventListener('click', () => { settings.difficulty = b.dataset.diff; saveSettings(); renderMode(); }));
 
 teamInput.addEventListener('input', () => { teamErr.textContent = ''; renderRecent(); });
@@ -162,7 +163,12 @@ async function startCameraGame() {
   try {
     if (!vision) vision = new CameraVision({ quality: settings.quality, mirror: settings.mirror });
     vision.mirror = settings.mirror;
-    await vision.startCamera({ deviceId: settings.cameraId || null, facing: settings.mode === 'tv' ? 'environment' : 'user' });
+    try { await vision.startCamera({ deviceId: settings.cameraId || null, facing: settings.facing }); }
+    catch (e) {
+      if (!settings.cameraId || e?.name === 'NotAllowedError') throw e;
+      settings.cameraId = ''; saveSettings(); // 저장된 카메라가 없어졌으면 앞/뒤 기준으로 다시
+      await vision.startCamera({ facing: settings.facing });
+    }
     if (loadCancelled) { vision.stopCamera(); return; }
     await vision.init((msg) => { $('#loading-text').textContent = msg; });
     if (loadCancelled) { vision.stopCamera(); return; }
@@ -210,21 +216,56 @@ async function enterLobby() {
   prepareStage(currentStage);
   preloadTheme(themeForStage(2));
 }
-$('#btn-go').addEventListener('click', () => { sound.unlock(); engine.startCountdown(); });
+$('#btn-go').addEventListener('click', () => { sound.unlock(); toggleCamPicker(false); engine.startCountdown(); });
 $('#btn-lobby-home').addEventListener('click', () => goTitle());
-$('#btn-cam-switch').addEventListener('click', async () => {
+// ── 카메라 고르기 (전면·후면·광각 등 모든 카메라) ──
+const FRONT_RE = /front|user|전면|facetime/i, BACK_RE = /back|rear|environment|후면/i;
+function camName(c, i, all) {
+  const l = c.label || '';
+  for (const [re, name] of [[FRONT_RE, '🤳 전면'], [BACK_RE, '📷 후면']]) {
+    if (re.test(l)) { const same = all.filter((x) => re.test(x.label || '')); return same.length > 1 ? `${name} ${same.indexOf(c) + 1}` : name; }
+  }
+  return l ? l.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '') : `카메라 ${i + 1}`;
+}
+async function renderCamPicker() {
+  const list = $('#cam-list');
+  const cams = (await CameraVision.listCameras()).filter((c) => c.deviceId);
+  list.replaceChildren();
+  if (!cams.length) { list.append(el('div', { class: 'cam-tip', text: '카메라 목록을 가져오지 못했어요' })); return; }
+  cams.forEach((c, i) => {
+    const on = c.deviceId === vision?.deviceId;
+    list.append(el('button', {
+      type: 'button', class: `cam-item${on ? ' on' : ''}`,
+      onclick: () => switchCamera(c),
+    }, el('span', { text: `${on ? '✔ ' : ''}${camName(c, i, cams)}` }), camName(c, i, cams) !== c.label ? el('small', { text: c.label || '' }) : null));
+  });
+}
+async function switchCamera(c) {
   if (!vision || engine.input !== vision) return;
-  const cams = await CameraVision.listCameras();
-  if (cams.length < 2) return;
-  const i = cams.findIndex((c) => c.deviceId === vision.deviceId);
-  const next = cams[(i + 1) % cams.length];
-  try { await vision.startCamera({ deviceId: next.deviceId }); settings.cameraId = next.deviceId; saveSettings(); }
-  catch (e) { console.warn(e); try { await vision.startCamera({ facing: settings.mode === 'tv' ? 'environment' : 'user' }); } catch { showCamError(e); } }
-});
+  try {
+    await vision.startCamera({ deviceId: c.deviceId });
+    settings.cameraId = c.deviceId;
+    if (vision.facing === 'user' || FRONT_RE.test(c.label)) settings.facing = 'user';
+    else if (vision.facing === 'environment' || BACK_RE.test(c.label)) settings.facing = 'environment';
+    saveSettings();
+  } catch (e) {
+    console.warn(e);
+    try { await vision.startCamera({ facing: settings.facing }); } catch { showCamError(e); return; }
+  }
+  renderCamPicker();
+}
+function toggleCamPicker(open) {
+  const pk = $('#cam-picker'), btn = $('#btn-cam-switch');
+  const show = open ?? pk.hidden;
+  pk.hidden = !show; btn.setAttribute('aria-expanded', String(show));
+  if (show) renderCamPicker();
+}
+$('#btn-cam-switch').addEventListener('click', () => toggleCamPicker());
 
 // ── 게임 진행 ──
 const tempoFor = (lv) => 104 + Math.min(lv, 14) * 5;
 engine.on('countdown', () => {
+  toggleCamPicker(false);
   show('play');
   sessionPromise = null;
   if (online.enabled && engine.input?.kind === 'camera') {
@@ -382,9 +423,10 @@ async function openSettings() {
   $('#set-debug').checked = settings.debug;
   $('#set-online').textContent = online.enabled ? '켜짐 ✅' : '꺼짐 (config.js 설정 필요)';
   const sel = $('#set-camera');
-  sel.replaceChildren(el('option', { value: '', text: '자동 (모드에 따라)' }));
-  const cams = await CameraVision.listCameras();
-  cams.forEach((c, i) => sel.append(el('option', { value: c.deviceId, text: c.label || `카메라 ${i + 1}` })));
+  sel.replaceChildren(el('option', { value: '', text: settings.facing === 'user' ? '자동 (전면)' : '자동 (후면)' }));
+  const cams = (await CameraVision.listCameras()).filter((c) => c.deviceId);
+  if (!cams.some((c) => c.label)) sel.append(el('option', { value: '', disabled: true, text: '카메라를 한 번 켜면 목록이 보여요' }));
+  else cams.forEach((c, i) => sel.append(el('option', { value: c.deviceId, text: camName(c, i, cams) })));
   sel.value = cams.some((c) => c.deviceId === settings.cameraId) ? settings.cameraId : '';
   show('settings');
 }

@@ -346,6 +346,7 @@ export class Engine {
     const inp = this.input;
     const showPerson = this.state !== 'title' && inp?.kind === 'camera' && inp.hasFrame;
     if (showPerson) c.drawImage(inp.person, 0, 0, W, H);
+    if (showPerson && inp.poseOk) this._drawHands(c, now);
 
     for (const it of this.items) this._drawItem(c, it, now);
     this._drawFx(c);
@@ -358,9 +359,9 @@ export class Engine {
     if (this.state === 'play' && this.absent) this._drawAbsent(c);
     if (this.banner) this._drawBanner(c);
     if (this.debug && inp?.kind === 'camera') {
-      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 180, 100, 360, 26);
+      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 230, 100, 460, 26);
       c.fillStyle = '#fff'; c.font = `600 16px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(`cam ${inp.fps.toFixed(0)}fps · seg ${inp.segMs.toFixed(1)}ms · ${inp.delegate} · 사람 ${(inp.coverage * 100).toFixed(1)}%`, W / 2, 113);
+      c.fillText(`cam ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate} · ${inp.people}명 손${inp.hands.length}`, W / 2, 113);
     }
   }
 
@@ -433,6 +434,18 @@ export class Engine {
       } else if (type === 'confetti') {
         c.save(); c.translate(p.x, p.y); c.rotate(p.ph); c.fillStyle = p.c; c.globalAlpha = 0.85; c.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); c.restore();
       }
+    }
+  }
+
+  // 인식된 손 표시: 아이들이 '내 손'이 어디인지 보이게 (잡기는 손으로만)
+  _drawHands(c, now) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 160);
+    for (const h of this.input.hands) {
+      c.fillStyle = 'rgba(255,255,255,0.16)'; c.beginPath(); c.arc(h.x, h.y, h.r, 0, TAU); c.fill();
+      c.lineWidth = 4 + pulse * 2; c.strokeStyle = 'rgba(255,217,61,0.9)'; c.stroke();
+      c.save(); c.translate(h.x, h.y); c.rotate(now / 600);
+      c.fillStyle = '#ffd93d'; this._star(c, 0, 0, 14, 6); c.fill();
+      c.restore();
     }
   }
 
@@ -513,7 +526,11 @@ export class Engine {
     this._text(c, '시작!', 0, 22, 44, '#ff4d6d');
     c.restore();
     let msg;
-    if (inp?.kind === 'camera') msg = inp.present ? '준비 완료! 노란 풍선을 손으로 터치하면 시작해요' : '카메라에 몸이 보이게 2~3걸음 뒤로 서 주세요';
+    if (inp?.kind === 'camera') {
+      if (!inp.present) msg = '카메라에 몸이 다 보이게 2~3걸음 뒤로 서 주세요';
+      else if (inp.poseOk && !inp.hands.length) msg = `${inp.people}명 인식! 손이 보이게 팔을 들어 주세요`;
+      else msg = inp.poseOk ? `${inp.people}명 인식! 손을 들어 노란 풍선을 터치하면 시작` : '준비 완료! 노란 풍선을 손으로 터치하면 시작해요';
+    }
     else msg = '풍선을 눌러서 시작! (터치 모드)';
     const tw = Math.min(W - 80, msg.length * 30 + 80);
     this._panel(c, W / 2 - tw / 2, H - 104, tw, 72, 36, 'rgba(255,255,255,0.94)');

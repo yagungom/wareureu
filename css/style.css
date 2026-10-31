@@ -113,6 +113,18 @@ h2 { margin: 0 0 1cqh; font-size: 1.6em; font-weight: 900; }
 .fs-btn[hidden] { display: none; }
 .fs-note { font-weight: 700; line-height: 1.5; margin: 0 0 1cqh; }
 
+/* 카메라 고르기 */
+.cam-picker { position: absolute; left: 1.6cqw; bottom: 10cqh; width: 34cqw; padding: 1.2cqw 1.4cqw; pointer-events: auto; }
+.cam-picker[hidden] { display: none; }
+.cam-picker-title { font-weight: 900; font-size: 1.1em; margin-bottom: 0.6cqh; }
+.cam-list { display: flex; flex-direction: column; gap: 0.6cqh; max-height: 40cqh; overflow: auto; }
+.cam-item { font: inherit; font-weight: 800; text-align: left; color: var(--ink); background: #fff; border: 0.2cqw solid var(--ink); border-radius: 1cqw; padding: 0.5em 0.8em; cursor: pointer; display: flex; justify-content: space-between; gap: 0.6em; }
+.cam-item.on { background: var(--mint); }
+.cam-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-item small { color: var(--muted); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.cam-item.on small { color: var(--ink); }
+.cam-tip { margin: 0.8cqh 0 0; color: var(--muted); font-weight: 700; font-size: 0.82em; line-height: 1.4; }
+
 /* 구석 조작 버튼 */
 .corner-controls { position: absolute; bottom: 2.2cqh; display: flex; gap: 0.8cqw; }
 .corner-controls.left { left: 1.6cqw; }
