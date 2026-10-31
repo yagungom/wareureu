@@ -4,7 +4,8 @@
 --  여러 번 실행해도 안전합니다(idempotent).
 --  (v1 스키마를 이미 실행했다면 먼저:  drop schema if exists private cascade;  후 이 파일 실행)
 --
---  랭킹: 통합 랭킹 1개 × 모드(일반/아기) × 기간(오늘/이번 주/이번 달, 한국시간)
+--  랭킹: 통합 랭킹 × 방식(카메라/폰) × 난이도(일반/아기) × 기간(오늘/이번 주/이번 달, 한국시간)
+--  (이전 버전을 실행했었다면 이 파일을 그대로 다시 실행하면 업데이트됩니다. 기록은 유지)
 --
 --  보안 설계
 --   · 테이블은 모두 private 스키마 → REST API 로 직접 읽기/쓰기 불가
@@ -48,6 +49,7 @@ on conflict do nothing;
 create table if not exists private.game_sessions (
   id           uuid primary key default gen_random_uuid(),
   mode         text not null check (mode in ('normal', 'baby')),
+  input        text not null default 'camera' check (input in ('camera', 'touch')),
   team_name    text not null,
   ip_hash      text not null,
   started_at   timestamptz not null default now(),
@@ -60,6 +62,7 @@ create index if not exists game_sessions_time_idx on private.game_sessions (star
 create table if not exists private.scores (
   id            bigint generated always as identity primary key,
   mode          text not null check (mode in ('normal', 'baby')),
+  input         text not null default 'camera' check (input in ('camera', 'touch')),
   team_name     text not null check (char_length(team_name) between 2 and 12),
   score         int not null check (score between 0 and 100000000),
   catches       int not null check (catches >= 0),
@@ -68,8 +71,21 @@ create table if not exists private.scores (
   created_at    timestamptz not null default now(),
   hidden        boolean not null default false     -- 관리자가 부적절한 기록을 숨길 때
 );
-create index if not exists scores_mode_time_idx  on private.scores (mode, created_at desc);
-create index if not exists scores_mode_score_idx on private.scores (mode, score desc);
+-- 이전 버전 테이블에 '방식(input)' 열 추가 (이미 있으면 건너뜀)
+alter table private.game_sessions add column if not exists input text not null default 'camera';
+alter table private.scores        add column if not exists input text not null default 'camera';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'game_sessions_input_ck') then
+    alter table private.game_sessions add constraint game_sessions_input_ck check (input in ('camera', 'touch'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'scores_input_ck') then
+    alter table private.scores add constraint scores_input_ck check (input in ('camera', 'touch'));
+  end if;
+end $$;
+drop index if exists private.scores_mode_time_idx;
+drop index if exists private.scores_mode_score_idx;
+create index if not exists scores_mode_input_time_idx  on private.scores (mode, input, created_at desc);
+create index if not exists scores_mode_input_score_idx on private.scores (mode, input, score desc);
 
 alter table private.app_secret    enable row level security;
 alter table private.banned_words  enable row level security;
@@ -140,11 +156,13 @@ end $$;
 -- ════════════════ 공개 함수 (브라우저가 호출) ════════════════
 
 -- 1) 게임 시작: 1회용 세션 발급
-create or replace function public.start_session(p_mode text, p_team text)
+drop function if exists public.start_session(text, text);
+create or replace function public.start_session(p_mode text, p_team text, p_input text default 'camera')
 returns uuid language plpgsql volatile security definer set search_path = '' as $$
 declare v_hash text; v_team text; v_id uuid; v_cnt int;
 begin
   if p_mode is null or p_mode not in ('normal', 'baby') then raise exception 'bad_mode' using errcode = '22023'; end if;
+  if p_input is null or p_input not in ('camera', 'touch') then raise exception 'bad_mode' using errcode = '22023'; end if;
   v_team := private.check_team(p_team);
   v_hash := private.client_ip_hash();
 
@@ -155,7 +173,7 @@ begin
    where ip_hash = v_hash and started_at > now() - interval '1 hour';
   if v_cnt >= 240 then raise exception 'rate_limited' using errcode = 'P0001'; end if;
 
-  insert into private.game_sessions (mode, team_name, ip_hash) values (p_mode, v_team, v_hash)
+  insert into private.game_sessions (mode, input, team_name, ip_hash) values (p_mode, p_input, v_team, v_hash)
   returning id into v_id;
 
   -- 오래된 세션 정리 (IP 해시 보관 최소화)
@@ -178,7 +196,7 @@ begin
   update private.game_sessions
      set submitted_at = now()
    where id = p_session and submitted_at is null and started_at > now() - interval '24 hours'
-  returning mode, team_name, started_at into s;
+  returning mode, input, team_name, started_at into s;
   if not found then return json_build_object('ok', false, 'reason', 'invalid_session'); end if;
 
   if p_score is null or p_catches is null or p_catch_points is null or p_survival_ms is null then
@@ -196,28 +214,30 @@ begin
     return json_build_object('ok', false, 'reason', 'implausible');
   end if;
 
-  insert into private.scores (mode, team_name, score, catches, survival_ms, reached_stage)
-  values (s.mode, s.team_name, p_score, p_catches, p_survival_ms, (v_cleared + 1)::int);
+  insert into private.scores (mode, input, team_name, score, catches, survival_ms, reached_stage)
+  values (s.mode, s.input, s.team_name, p_score, p_catches, p_survival_ms, (v_cleared + 1)::int);
 
   v_from := private.period_from('day');
   select count(*) filter (where sc.score > p_score) + 1, count(*)
     into v_rank, v_total
     from private.scores sc
-   where sc.mode = s.mode and sc.created_at >= v_from and not sc.hidden;
+   where sc.mode = s.mode and sc.input = s.input and sc.created_at >= v_from and not sc.hidden;
 
   return json_build_object('ok', true, 'day_rank', v_rank, 'day_total', v_total, 'reached_stage', v_cleared + 1);
 end $$;
 
 -- 3) 랭킹: 모드 × 기간(day/week/month) → TOP10 + 점수 분포 + 내 순위
-create or replace function public.get_leaderboard(p_mode text, p_period text, p_score int default null)
+drop function if exists public.get_leaderboard(text, text, int);
+create or replace function public.get_leaderboard(p_mode text, p_period text, p_score int default null, p_input text default 'camera')
 returns json language plpgsql stable security definer set search_path = '' as $$
 declare v_from timestamptz; v_total int; v_max int; v_step int; v_top json; v_bins json; v_rank int;
 begin
   if p_mode is null or p_mode not in ('normal', 'baby') then raise exception 'bad_mode' using errcode = '22023'; end if;
+  if p_input is null or p_input not in ('camera', 'touch') then raise exception 'bad_mode' using errcode = '22023'; end if;
   v_from := private.period_from(p_period);
 
   select count(*), coalesce(max(sc.score), 0) into v_total, v_max
-    from private.scores sc where sc.mode = p_mode and sc.created_at >= v_from and not sc.hidden;
+    from private.scores sc where sc.mode = p_mode and sc.input = p_input and sc.created_at >= v_from and not sc.hidden;
 
   v_step := greatest(private.nice_step(greatest(v_max, 1) / 16.0), 10);
 
@@ -225,47 +245,47 @@ begin
     select row_number() over (order by sc.score desc, sc.created_at asc) as rank,
            sc.team_name as team, sc.score, sc.catches, sc.survival_ms, sc.reached_stage, sc.created_at as at
       from private.scores sc
-     where sc.mode = p_mode and sc.created_at >= v_from and not sc.hidden
+     where sc.mode = p_mode and sc.input = p_input and sc.created_at >= v_from and not sc.hidden
      order by sc.score desc, sc.created_at asc
      limit 10) t;
 
   select coalesce(json_agg(json_build_object('b', x.b, 'c', x.c) order by x.b), '[]'::json) into v_bins from (
     select (sc.score / v_step) as b, count(*) as c
       from private.scores sc
-     where sc.mode = p_mode and sc.created_at >= v_from and not sc.hidden
+     where sc.mode = p_mode and sc.input = p_input and sc.created_at >= v_from and not sc.hidden
      group by 1) x;
 
   if p_score is not null then
     select count(*) + 1 into v_rank from private.scores sc
-     where sc.mode = p_mode and sc.created_at >= v_from and not sc.hidden and sc.score > p_score;
+     where sc.mode = p_mode and sc.input = p_input and sc.created_at >= v_from and not sc.hidden and sc.score > p_score;
   end if;
 
   return json_build_object('total', v_total, 'step', v_step, 'max', v_max, 'top', v_top, 'bins', v_bins, 'my_rank', v_rank);
 end $$;
 
 -- ── 실행 권한: 공개 함수 3개만 ──
-revoke all on function public.start_session(text, text) from public;
+revoke all on function public.start_session(text, text, text) from public;
 revoke all on function public.submit_score(uuid, int, int, int, int) from public;
-revoke all on function public.get_leaderboard(text, text, int) from public;
+revoke all on function public.get_leaderboard(text, text, int, text) from public;
 revoke all on all functions in schema private from public;
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    execute 'grant execute on function public.start_session(text, text) to anon';
+    execute 'grant execute on function public.start_session(text, text, text) to anon';
     execute 'grant execute on function public.submit_score(uuid, int, int, int, int) to anon';
-    execute 'grant execute on function public.get_leaderboard(text, text, int) to anon';
+    execute 'grant execute on function public.get_leaderboard(text, text, int, text) to anon';
     execute 'revoke all on all functions in schema private from anon';
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    execute 'grant execute on function public.start_session(text, text) to authenticated';
+    execute 'grant execute on function public.start_session(text, text, text) to authenticated';
     execute 'grant execute on function public.submit_score(uuid, int, int, int, int) to authenticated';
-    execute 'grant execute on function public.get_leaderboard(text, text, int) to authenticated';
+    execute 'grant execute on function public.get_leaderboard(text, text, int, text) to authenticated';
     execute 'revoke all on all functions in schema private from authenticated';
   end if;
 end $$;
 
 -- ════════════════ 관리자용 (SQL Editor 에서 직접 실행) ════════════════
 -- 최근 기록 보기:
---   select id, mode, team_name, score, reached_stage, created_at from private.scores order by created_at desc limit 50;
+--   select id, mode, input, team_name, score, reached_stage, created_at from private.scores order by created_at desc limit 50;
 -- 부적절한 팀 이름 숨기기:
 --   update private.scores set hidden = true where team_name = '문제되는이름';
 -- 금지어 추가:

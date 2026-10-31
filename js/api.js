@@ -31,20 +31,26 @@ export const online = {
     } finally { clearTimeout(timer); }
   },
 
-  startSession(mode, team) { return this.rpc('start_session', { p_mode: mode, p_team: team }); },
+  // 서버 SQL 이 아직 이전 버전이면(함수 없음 404) 카메라 모드는 예전 방식으로 한 번 더 시도
+  async withLegacy(fn, body, input) {
+    try { return await this.rpc(fn, { ...body, p_input: input }); }
+    catch (e) { if (e?.status === 404 && input === 'camera') return this.rpc(fn, body); throw Object.assign(e, { code: e?.status === 404 ? 'server_update' : e?.code }); }
+  },
+  startSession(mode, team, input = 'camera') { return this.withLegacy('start_session', { p_mode: mode, p_team: team }, input); },
   submit(sessionId, r) {
     return this.rpc('submit_score', {
       p_session: sessionId, p_score: r.score, p_catches: r.catches, p_catch_points: r.catchPoints, p_survival_ms: r.survivalMs,
     });
   },
-  board(mode, period, myScore = null) {
-    return this.rpc('get_leaderboard', { p_mode: mode, p_period: period, p_score: myScore });
+  board(mode, period, myScore = null, input = 'camera') {
+    return this.withLegacy('get_leaderboard', { p_mode: mode, p_period: period, p_score: myScore }, input);
   },
 };
 
 export function errorText(code) {
   const map = {
     bad_mode: '난이도 정보가 올바르지 않아요',
+    server_update: '랭킹 서버 업데이트가 필요해요 (schema.sql 다시 실행)',
     rate_limited: '잠시 후 다시 시도해 주세요 (요청이 너무 많아요)',
     banned_name: '이 팀 이름은 온라인 랭킹에 쓸 수 없어요',
     bad_name_length: '팀 이름 길이를 확인해 주세요',
