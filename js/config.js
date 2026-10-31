@@ -7,8 +7,8 @@ export const CONFIG = Object.freeze({
   // 키는 Supabase > Project Settings > API Keys 의 publishable(anon) 키.
   // 이 키는 원래 브라우저에 공개되는 값이고, 보안은 서버 쪽 RLS·검증 함수가 담당합니다.
   // ⚠ service_role / secret 키는 절대 넣지 마세요.
-  SUPABASE_URL: '',
-  SUPABASE_KEY: '',
+  SUPABASE_URL: 'https://hofykldrsauhmwepehnf.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_JzCBAjrAhOgG9ZOqKhwz4Q_92R80GrW',
 
   // 사람 분리(크로마키) 모델. 이 폴더에 같이 들어 있어 외부 서버를 부르지 않습니다.
   //  kind: 'person'  → 마스크 값이 "사람일 확률" (기본 selfie 모델)
