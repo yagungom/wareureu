@@ -119,7 +119,7 @@ export class CameraVision {
       loadPose(this.poseKind, onProgress).catch((e) => { console.warn('자세 인식 불러오기 실패 → 몸 전체로 판정', e); return null; }),
     ]);
     this.segmenter = seg.task; this.delegate = seg.delegate;
-    this.poser = pose?.task || null; this.poseOk = !!this.poser;
+    this.poser = pose?.task || null; this.poseOk = !!this.poser; this.poseDelegate = pose?.delegate || '-';
   }
 
   static async listCameras() {

@@ -223,6 +223,11 @@ const PAINT = {
 
 // 배경 캐시: 사용자 이미지 > 코드 배경
 const bgCache = new Map();
+export function clearBackgroundCache() { bgCache.clear(); }
+// 배경도 지워졌는지 확인 (배경은 전부 불투명이라 가운데 점이 투명하면 지워진 것)
+export function backgroundLost(cv) {
+  try { return cv.getContext('2d').getImageData(cv.width >> 1, cv.height >> 1, 1, 1).data[3] === 0; } catch { return true; }
+}
 const imgCache = new Map();
 
 function coverDraw(c, img, W, H) {

@@ -1,8 +1,8 @@
 // 게임 엔진: 낙하·충돌·점수·생명·연출·HUD
 import { CONFIG, RULES, DIFFICULTY } from './config.js';
 import { TAU, clamp, rand, choice, easeOutBack, formatNum } from './util.js';
-import { getSprite, spriteDrawSize, BOMB_SPARK } from './sprites.js';
-import { getBackground, themeForStage } from './stages.js';
+import { getSprite, spriteDrawSize, BOMB_SPARK, validateSprites, clearSpriteCache } from './sprites.js';
+import { getBackground, themeForStage, clearBackgroundCache, backgroundLost } from './stages.js';
 
 const FONT = 'system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
 const INK = '#2b2140';
@@ -72,7 +72,22 @@ export class Engine {
     this._raf = requestAnimationFrame(this._frame);
   };
 
+  // 화면이 가려졌다 돌아오면 그려둔 이미지 전부 새로 (안드로이드 메모리 정리 대비)
+  rebuildGraphics() {
+    clearSpriteCache(); clearBackgroundCache();
+    this.prevBg = null; this.fade = 1;
+    if (this.stage) this.bg = getBackground(this.stage, this.W, this.H);
+  }
+  _checkGraphics(now) {
+    if (now - (this._lastCheck || 0) < 3000) return;
+    this._lastCheck = now;
+    const ids = ['bomb', 'heart', ...(this.stage?.chars || [])];
+    validateSprites(ids);
+    if (this.bg && backgroundLost(this.bg)) this.rebuildGraphics();
+  }
+
   update(dt, now) {
+    this._checkGraphics(now);
     this._updateAmbient(dt);
     this._updateFx(dt);
     if (this.fade < 1) { this.fade = Math.min(1, this.fade + dt / 0.8); if (this.fade >= 1) this.prevBg = null; }
@@ -361,7 +376,7 @@ export class Engine {
     if (this.debug && inp?.kind === 'camera') {
       c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 230, 100, 460, 26);
       c.fillStyle = '#fff'; c.font = `600 16px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(`cam ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate} · ${inp.people}명 손${inp.hands.length}`, W / 2, 113);
+      c.fillText(`cam ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate}/${inp.poseDelegate} · ${inp.people}명 손${inp.hands.length}`, W / 2, 113);
     }
   }
 

@@ -477,9 +477,27 @@ function render(id) {
 export function getSprite(id) {
   if (custom.has(id)) return custom.get(id);
   let s = cache.get(id);
-  if (!s) { s = render(id); cache.set(id, s); }
+  if (!s) {
+    s = render(id); cache.set(id, s);
+    // 안드로이드는 화면 전환(미러링 시작·앱 전환 등) 때 그려둔 이미지를 지우기도 함 → 다시 그리게
+    s.addEventListener?.('contextlost', () => { if (cache.get(id) === s) cache.delete(id); });
+  }
   return s;
 }
+
+// 그려둔 이미지가 지워졌는지 가운데 점 하나로 확인하고, 지워졌으면 다시 그림
+export function validateSprites(ids) {
+  let fixed = 0;
+  for (const id of ids) {
+    const s = cache.get(id); if (!s) continue;
+    try {
+      const a = s.getContext('2d').getImageData(s.width >> 1, s.height >> 1, 1, 1).data[3];
+      if (a === 0) { cache.delete(id); fixed++; }
+    } catch { cache.delete(id); fixed++; }
+  }
+  return fixed;
+}
+export function clearSpriteCache() { cache.clear(); custom.clear(); }
 
 // 스프라이트 반지름 60(디자인) → 화면 반지름 r 일 때 그릴 크기
 export function spriteDrawSize(r) { return SIZE / SCALE * (r / 60); }

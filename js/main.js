@@ -294,8 +294,14 @@ $('#btn-quit').addEventListener('click', () => { sound.stopBgm(); goTitle(); });
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { if (engine.state === 'play') { engine.pause(); sound.stopBgm(); show('pause'); } }
-  else if (engine.input) requestWake();
+  else { restoreGraphics(); if (engine.input) requestWake(); }
 });
+window.addEventListener('pageshow', () => restoreGraphics());
+function restoreGraphics() {
+  engine.rebuildGraphics();
+  if (engine.stage) prepareStage(engine.stage);
+  if (CONFIG.CUSTOM_CHARACTERS) tryLoadCustomSprites(ALL_IDS);
+}
 
 // ── 결과 ──
 const resState = { period: 'day', scope: 'local' };
@@ -472,4 +478,4 @@ if (CONFIG.CUSTOM_CHARACTERS) tryLoadCustomSprites(ALL_IDS);
 goTitle();
 checkRotate();
 
-if (params.has('test')) window.__wc = { engine, settings, online, get vision() { return vision; }, startTouchGame, show };
+if (params.has('test')) window.__wc = { engine, settings, online, get vision() { return vision; }, startTouchGame, show, sprites: import('./sprites.js') };
