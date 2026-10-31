@@ -36,9 +36,13 @@
             <input id="team" name="team" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="예: 튼튼이네 가족" enterkeyhint="go">
             <div id="team-err" class="err" aria-live="polite"></div>
             <div id="recent" class="chips" aria-label="최근 팀 이름"></div>
-            <div class="seg" role="radiogroup" aria-label="카메라">
-              <button type="button" class="seg-btn" data-facing="environment" role="radio">📷 후면 카메라<small>폰 뒤쪽 · 화질 좋음</small></button>
-              <button type="button" class="seg-btn" data-facing="user" role="radio">🤳 전면 카메라<small>화면 쪽</small></button>
+            <div class="seg" role="radiogroup" aria-label="플레이 방식">
+              <button type="button" class="seg-btn" data-play="camera" role="radio">📺 카메라 모드<small>손으로 잡기 · TV 추천</small></button>
+              <button type="button" class="seg-btn" data-play="touch" role="radio">📱 폰 모드<small>손가락으로 터치</small></button>
+            </div>
+            <div class="seg seg-sm" id="facing-row" role="radiogroup" aria-label="카메라">
+              <button type="button" class="seg-btn" data-facing="environment" role="radio">📷 후면 카메라</button>
+              <button type="button" class="seg-btn" data-facing="user" role="radio">🤳 전면 카메라</button>
             </div>
             <div class="seg seg-sm" role="radiogroup" aria-label="난이도">
               <button type="button" class="seg-btn" data-diff="normal" role="radio">🙂 일반</button>
@@ -152,6 +156,7 @@
             <div class="tabs small" id="rank-scope"></div>
           </div>
           <div class="board-tabs">
+            <div class="tabs" id="rank-input"></div>
             <div class="tabs" id="rank-mode"></div>
             <div class="tabs" id="rank-period"></div>
           </div>
@@ -164,7 +169,8 @@
         <div class="card help-card">
           <h2>이렇게 놀아요</h2>
           <ol class="help-list">
-            <li><b>📺 TV에 연결</b> 유선 또는 스마트뷰로 미러링해요. 스마트뷰는 <b>화면 비율 → 연결된 기기에서 전체 화면</b>을 고르면 꽉 차요.</li>
+            <li><b>📱 폰 모드</b> 카메라 없이 폰 화면에서 손가락으로 떨어지는 친구들을 터치해요. 폭탄은 누르면 안 돼요!</li>
+            <li><b>📺 TV에 연결 (카메라 모드)</b> 유선 또는 스마트뷰로 미러링해요. 스마트뷰는 <b>화면 비율 → 연결된 기기에서 전체 화면</b>을 고르면 꽉 차요.</li>
             <li><b>📱 폰 세우기</b> 폰을 가로로 세워 가족을 향하게 두고, 2~3걸음 뒤로 서요. 몇 명이든 같이 할 수 있어요. 카메라는 시작 화면이나 대기실의 "카메라 바꾸기"에서 골라요.</li>
             <li><b>🙌 잡기</b> 화면에 노란 동그라미로 보이는 게 내 손이에요. 손으로 떨어지는 친구들을 잡거나 건드리면 점수!</li>
             <li><b>💣 피하기</b> 손으로 폭탄을 건드리면 생명이 하나 날아가요. 생명 5개가 다 없어지면 끝. 가끔 떨어지는 하트는 생명 +1!</li>

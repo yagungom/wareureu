@@ -18,7 +18,7 @@ const sound = new Sound();
 const engine = new Engine(canvas, sound);
 
 // ── 설정 ──
-const DEFAULTS = { facing: 'environment', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
+const DEFAULTS = { play: 'camera', facing: 'environment', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
 const settings = { ...DEFAULTS, ...store.get('wc.settings.v1', {}) };
 if (settings.mode) { settings.facing = settings.mode === 'phone' ? 'user' : 'environment'; delete settings.mode; } // 예전 설정 이전
 const saveSettings = () => store.set('wc.settings.v1', settings);
@@ -65,9 +65,12 @@ function renderRecent() {
 function saveRecent(t) { store.set('wc.teams.v1', [t, ...recent().filter((x) => x !== t)].slice(0, 6)); }
 
 function renderMode() {
+  $$('.seg-btn[data-play]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.play === settings.play)));
+  $('#facing-row').hidden = settings.play !== 'camera';
   $$('.seg-btn[data-facing]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.facing === settings.facing)));
   $$('.seg-btn[data-diff]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.diff === settings.difficulty)));
 }
+$$('.seg-btn[data-play]').forEach((b) => b.addEventListener('click', () => { settings.play = b.dataset.play; saveSettings(); renderMode(); }));
 $$('.seg-btn[data-facing]').forEach((b) => b.addEventListener('click', () => { settings.facing = b.dataset.facing; settings.cameraId = ''; saveSettings(); renderMode(); }));
 $$('.seg-btn[data-diff]').forEach((b) => b.addEventListener('click', () => { settings.difficulty = b.dataset.diff; saveSettings(); renderMode(); }));
 
@@ -157,7 +160,7 @@ async function startCameraGame() {
   sound.unlock();
   enterFullscreen();
   requestWake();
-  if (params.has('touch') || CONFIG.FORCE_TOUCH) return startTouchGame();
+  if (settings.play === 'touch' || params.has('touch') || CONFIG.FORCE_TOUCH) return startTouchGame();
   loadCancelled = false;
   show('loading'); $('#loading-text').textContent = '카메라 켜는 중… (권한을 허용해 주세요)';
   try {
@@ -316,7 +319,7 @@ async function showResult(res) {
   sound.fanfare();
   setupRetryBubble(res.input);
 
-  if (res.input !== 'camera') note.textContent = '👆 터치 모드 기록은 이 기기에만 저장돼요';
+  if (res.input !== 'camera') note.textContent = '📱 폰 모드 기록은 이 기기에만 저장돼요 (폰 모드 랭킹에 표시)';
   else if (!online.enabled) note.textContent = '💾 이 기기에 저장했어요 (온라인 랭킹은 설정 후 켜져요)';
   else {
     note.textContent = '🌐 온라인 랭킹에 등록하는 중…';
@@ -350,8 +353,8 @@ bubble.addEventListener('click', () => retry());
 function renderResultBoard() {
   const r = lastResult; if (!r) return;
   makeTabs($('#res-period'), PERIODS, resState.period, (v) => { resState.period = v; renderResultBoard(); });
-  makeTabs($('#res-scope'), scopes(), resState.scope, (v) => { resState.scope = v; renderResultBoard(); });
-  loadBoard($('#res-board'), { scope: resState.scope, mode: r.difficulty, period: resState.period, myScore: r.score, myTeam: r.team });
+  makeTabs($('#res-scope'), scopes(r.input), resState.scope, (v) => { resState.scope = v; renderResultBoard(); });
+  loadBoard($('#res-board'), { scope: resState.scope, mode: r.difficulty, input: r.input, period: resState.period, myScore: r.score, myTeam: r.team });
 }
 
 function retry() {
@@ -363,10 +366,12 @@ $('#btn-home').addEventListener('click', () => goTitle());
 
 // ── 랭킹 ──
 const PERIODS = [{ value: 'day', label: '오늘' }, { value: 'week', label: '이번 주' }, { value: 'month', label: '이번 달' }];
-const scopes = () => [
-  { value: 'online', label: online.enabled ? '🌐 전체' : '🌐 전체 (준비 중)', disabled: !online.enabled },
+// 온라인 랭킹은 카메라 모드만 (폰 모드는 이 기기 기록만)
+const scopes = (input = 'camera') => [
+  { value: 'online', label: input === 'touch' ? '🌐 전체 (카메라 모드만)' : online.enabled ? '🌐 전체' : '🌐 전체 (준비 중)', disabled: input === 'touch' || !online.enabled },
   { value: 'local', label: '🏠 우리 기기' },
 ];
+const INPUTS = [{ value: 'camera', label: '📺 카메라' }, { value: 'touch', label: '📱 폰' }];
 
 function makeTabs(box, items, current, onChange) {
   box.replaceChildren();
@@ -380,33 +385,37 @@ function makeTabs(box, items, current, onChange) {
 }
 
 let boardToken = 0;
-async function loadBoard(box, { scope, mode, period, myScore = null, myTeam = null }) {
+async function loadBoard(box, { scope, mode, input = 'camera', period, myScore = null, myTeam = null }) {
   const token = ++boardToken;
   box.replaceChildren(el('div', { class: 'board-note', text: '불러오는 중…' }));
   let board;
   if (scope === 'online') {
     try { board = normalizeOnline(await online.board(mode, period, myScore)); }
     catch (e) { if (token === boardToken) box.replaceChildren(el('div', { class: 'board-note', text: errorText(e?.code || e?.message) })); return; }
-  } else board = localBoard(mode, period, myScore);
+  } else board = localBoard(mode, period, myScore, input);
   if (token !== boardToken) return;
-  renderBoard(box, board, { myScore, myTeam, scopeLabel: `${scope === 'online' ? '전체' : '우리 기기'}${mode === 'baby' ? '(아기 모드)' : ''}` });
+  const tags = [input === 'touch' ? '폰 모드' : null, mode === 'baby' ? '아기 모드' : null].filter(Boolean);
+  renderBoard(box, board, { myScore, myTeam, scopeLabel: `${scope === 'online' ? '전체' : '우리 기기'}${tags.length ? `(${tags.join('·')})` : ''}` });
 }
 
 const MODES = Object.entries(DIFFICULTY).map(([value, d]) => ({ value, label: value === 'baby' ? `🍼 ${d.label}` : `🙂 ${d.label}` }));
-const rankState = { mode: 'normal', period: 'day', scope: 'local', from: 'title' };
+const rankState = { input: 'camera', mode: 'normal', period: 'day', scope: 'local', from: 'title' };
 function openRanking(from) {
   rankState.from = from;
+  rankState.input = lastResult?.input || settings.play;
   rankState.mode = lastResult?.difficulty || settings.difficulty;
-  rankState.scope = online.enabled ? 'online' : 'local';
+  rankState.scope = online.enabled && rankState.input === 'camera' ? 'online' : 'local';
   show('ranking');
   renderRanking();
 }
 function renderRanking() {
+  if (rankState.input === 'touch') rankState.scope = 'local';
+  makeTabs($('#rank-input'), INPUTS, rankState.input, (v) => { rankState.input = v; if (v === 'camera' && online.enabled) rankState.scope = 'online'; renderRanking(); });
   makeTabs($('#rank-mode'), MODES, rankState.mode, (v) => { rankState.mode = v; renderRanking(); });
   makeTabs($('#rank-period'), PERIODS, rankState.period, (v) => { rankState.period = v; renderRanking(); });
-  makeTabs($('#rank-scope'), scopes(), rankState.scope, (v) => { rankState.scope = v; renderRanking(); });
-  const mine = lastResult && lastResult.difficulty === rankState.mode ? lastResult : null;
-  loadBoard($('#rank-board'), { scope: rankState.scope, mode: rankState.mode, period: rankState.period, myScore: mine?.score ?? null, myTeam: mine?.team || team || null });
+  makeTabs($('#rank-scope'), scopes(rankState.input), rankState.scope, (v) => { rankState.scope = v; renderRanking(); });
+  const mine = lastResult && lastResult.difficulty === rankState.mode && lastResult.input === rankState.input ? lastResult : null;
+  loadBoard($('#rank-board'), { scope: rankState.scope, mode: rankState.mode, input: rankState.input, period: rankState.period, myScore: mine?.score ?? null, myTeam: mine?.team || team || null });
 }
 $('#btn-rank').addEventListener('click', () => openRanking('title'));
 $('#rank-back').addEventListener('click', () => { if (rankState.from === 'result') show('result'); else show('title'); });

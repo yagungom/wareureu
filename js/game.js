@@ -450,8 +450,8 @@ export class Engine {
   }
 
   _drawTouch(c, now) {
-    for (const p of this.input.pointers.values()) {
-      if (now - p.t > 1500 && this.input.pointers.size) continue;
+    for (const p of this.input.active) {
+      if (!p.up && now - p.t > 1500) continue;
       const R = this.input.R;
       c.fillStyle = 'rgba(255,255,255,0.25)'; c.beginPath(); c.arc(p.x, p.y, R, 0, TAU); c.fill();
       c.lineWidth = 5; c.strokeStyle = 'rgba(255,255,255,0.9)'; c.stroke();

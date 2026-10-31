@@ -32,9 +32,9 @@ export function buildBoard(rows, myScore = null) {
   return { total: rows.length, step, max, top, bins, my_rank: myRank };
 }
 
-export function localBoard(mode, period, myScore = null) {
+export function localBoard(mode, period, myScore = null, input = 'camera') {
   const from = periodStart(period);
-  const rows = loadLocal().filter((r) => r.mode === mode && r.ts >= from);
+  const rows = loadLocal().filter((r) => r.mode === mode && (r.input || 'camera') === input && r.ts >= from);
   return buildBoard(rows, myScore);
 }
 

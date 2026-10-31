@@ -334,7 +334,7 @@ export class CameraVision {
   destroy() { this.stopCamera(); }
 }
 
-// 카메라 없이 손가락/마우스로 하는 모드 (미리보기·카메라 거부 시)
+// 폰 모드: 카메라 없이 손가락(또는 마우스)으로 터치
 export class TouchInput {
   constructor(canvas) {
     this.kind = 'touch';
@@ -345,16 +345,34 @@ export class TouchInput {
       const r = canvas.getBoundingClientRect();
       return { x: (e.clientX - r.left) / r.width * this.W, y: (e.clientY - r.top) / r.height * this.H };
     };
-    this._down = (e) => { this.pointers.set(e.pointerId, { ...toLocal(e), t: performance.now() }); };
-    this._move = (e) => { if (e.pointerType === 'mouse' || this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { ...toLocal(e), t: performance.now() }); };
-    this._up = (e) => { if (e.pointerType !== 'mouse') this.pointers.delete(e.pointerId); };
+    this._down = (e) => { const q = toLocal(e), now = performance.now(); this.pointers.set(e.pointerId, { ...q, px: q.x, py: q.y, t: now, mt: now, up: 0 }); };
+    this._move = (e) => {
+      const p = this.pointers.get(e.pointerId);
+      if (e.pointerType !== 'mouse' && (!p || p.up)) return;
+      const q = toLocal(e), now = performance.now();
+      this.pointers.set(e.pointerId, { ...q, px: p ? p.x : q.x, py: p ? p.y : q.y, t: now, mt: now, up: 0 });
+    };
+    // 손가락을 뗀 뒤에도 잠깐(0.16초) 판정을 유지 → 아주 짧게 '톡' 쳐도 인식
+    this._up = (e) => { const p = this.pointers.get(e.pointerId); if (p && e.pointerType !== 'mouse') p.up = performance.now(); };
     canvas.addEventListener('pointerdown', this._down);
     canvas.addEventListener('pointermove', this._move);
     window.addEventListener('pointerup', this._up);
     window.addEventListener('pointercancel', this._up);
   }
+  get active() {
+    const now = performance.now(), out = [];
+    for (const [id, p] of this.pointers) {
+      if (p.up && now - p.up > 160) { this.pointers.delete(id); continue; }
+      out.push(p);
+    }
+    return out;
+  }
   hitTest(x, y, r) {
-    for (const p of this.pointers.values()) { const dx = p.x - x, dy = p.y - y; if (dx * dx + dy * dy < (r + this.R * 0.6) ** 2) return true; }
+    const now = performance.now(), rr = (r + this.R * 0.6) ** 2;
+    for (const p of this.active) {
+      const swept = now - p.mt < 60; // 방금 움직였으면 지나간 경로까지
+      if ((swept ? segDist2(x, y, p.px, p.py, p.x, p.y) : (p.x - x) ** 2 + (p.y - y) ** 2) < rr) return true;
+    }
     return false;
   }
   get present() { return true; }

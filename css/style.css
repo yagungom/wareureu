@@ -93,6 +93,8 @@ h2 { margin: 0 0 1cqh; font-size: 1.6em; font-weight: 900; }
 .seg-btn[aria-checked="true"] { background: var(--mint); }
 .seg-sm .seg-btn { flex-direction: row; justify-content: center; padding: 0.4em 0.4em; font-size: 0.98em; gap: 0.35em; }
 .seg-sm .seg-btn[aria-checked="true"] { background: var(--yellow); }
+#facing-row[hidden] { display: none; }
+#facing-row .seg-btn[aria-checked="true"] { background: #bfe7ff; }
 .seg-btn[aria-checked="true"] small { color: var(--ink); }
 .privacy { margin: 0.6cqh 0 0; font-size: 0.82em; color: var(--muted); font-weight: 700; line-height: 1.4; }
 .privacy.small { font-size: 0.78em; }
@@ -109,7 +111,7 @@ h2 { margin: 0 0 1cqh; font-size: 1.6em; font-weight: 900; }
 /* 전체화면 버튼 */
 .fs-btn svg { width: 1.15em; height: 1.15em; display: block; }
 .fs-btn .fs-label { margin-left: 0.15em; }
-.fs-title { position: absolute; top: 2.2cqh; right: 2cqw; z-index: 2; background: rgba(255,255,255,0.9); }
+.fs-title { position: absolute; top: 2.2cqh; left: 2cqw; z-index: 2; background: rgba(255,255,255,0.9); }
 .fs-btn[hidden] { display: none; }
 .fs-note { font-weight: 700; line-height: 1.5; margin: 0 0 1cqh; }
 
