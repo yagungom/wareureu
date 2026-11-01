@@ -195,6 +195,9 @@ h2 { margin: 0 0 1cqh; font-size: 1.6em; font-weight: 900; }
 .hist-svg { width: 100%; height: auto; max-height: 100%; display: block; }
 .hist-svg .bar { fill: #9dbcf5; }
 .hist-svg .bar.mine { fill: var(--coral); }
+.hist-svg .dot { fill: #9dbcf5; stroke: #fff; stroke-width: 2; }
+.hist-svg .dot.mine { fill: var(--coral); stroke: var(--ink); stroke-width: 3; }
+.hist-svg .tick.dim { fill: #a99cc0; font-size: 15px; }
 .hist-svg .hit { fill: transparent; cursor: pointer; }
 .hist-svg .hit:hover { fill: rgba(43,33,64,0.05); }
 .hist-svg .axis { stroke: #5a4d72; stroke-width: 2; }

@@ -1,7 +1,7 @@
 // 게임 엔진: 낙하·충돌·점수·생명·연출·HUD
 import { CONFIG, RULES, DIFFICULTY } from './config.js';
 import { TAU, clamp, rand, choice, easeOutBack, formatNum } from './util.js';
-import { getSprite, spriteDrawSize, BOMB_SPARK, validateSprites, clearSpriteCache } from './sprites.js';
+import { getSprite, spriteDrawSize, BOMB_SPARK, validateSprites, clearSpriteCache, loadItemSheet } from './sprites.js';
 import { getBackground, themeForStage, clearBackgroundCache, backgroundLost } from './stages.js';
 
 const FONT = 'system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
@@ -49,6 +49,7 @@ export class Engine {
     this.stage = stage;
     this.bg = getBackground(stage, this.W, this.H);
     this.ambient.length = 0;
+    this._loadSheet(stage);
   }
   refreshBackground() { if (this.stage) this.bg = getBackground(this.stage, this.W, this.H); }
 
@@ -76,13 +77,14 @@ export class Engine {
   rebuildGraphics() {
     clearSpriteCache(); clearBackgroundCache();
     this.prevBg = null; this.fade = 1;
-    if (this.stage) this.bg = getBackground(this.stage, this.W, this.H);
+    if (this.stage) { this.bg = getBackground(this.stage, this.W, this.H); this._loadSheet(this.stage); }
   }
+  _loadSheet(st) { if (CONFIG.CUSTOM_ITEMS && st) loadItemSheet(st); }
   _checkGraphics(now) {
     if (now - (this._lastCheck || 0) < 3000) return;
     this._lastCheck = now;
-    const ids = ['bomb', 'heart', ...(this.stage?.chars || [])];
-    validateSprites(ids);
+    const ids = ['bomb', 'heart', ...(this.stage?.items || []).map((it) => it.id)];
+    if (validateSprites(ids)) this._loadSheet(this.stage);
     if (this.bg && backgroundLost(this.bg)) this.rebuildGraphics();
   }
 
@@ -112,7 +114,7 @@ export class Engine {
         if (n !== this._lastBeep && n > 0) { this._lastBeep = n; this.sound.beep(false); }
         if (this.countT <= 0) {
           this.state = 'play'; this.sound.beep(true);
-          this.banner = { text: '스테이지 1 시작!', sub: `${this.stage.emoji} ${this.stage.name}`, t: 0, max: 1.4 };
+          this.banner = { text: '스테이지 1 시작!', sub: `${this.stage.emoji} ${this.stage.fullName}`, t: 0, max: 1.4 };
           this.emit('state', 'play'); this.emit('stageStart', 1, this.stage);
         }
         break;
@@ -189,7 +191,7 @@ export class Engine {
     this.stageNum++; this.stageT = 0;
     this.level = this.levelFor(this.stageNum, 0);
     this.setStage(themeForStage(this.stageNum), true);
-    this.banner = { text: `스테이지 ${this.stageNum}`, sub: `${this.stage.emoji} ${this.stage.name} · Lv.${this.level}`, t: 0, max: RULES.REST_SEC * 0.5 + 0.4 };
+    this.banner = { text: `스테이지 ${this.stageNum}`, sub: `${this.stage.emoji} ${this.stage.fullName} · Lv.${this.level}`, t: 0, max: RULES.REST_SEC * 0.5 + 0.4 };
     this.emit('stageStart', this.stageNum, this.stage);
   }
 
@@ -231,7 +233,7 @@ export class Engine {
     if (Math.abs(x - this.lastSpawnX) < 110) x = (x + this.W / 2) % this.W;
     x = clamp(x, r + 20, this.W - r - 20);
     this.lastSpawnX = x;
-    const sprite = kind === 'char' ? choice(st.chars) : kind;
+    const sprite = kind === 'char' ? choice(st.items).id : kind;
     this.items.push({
       kind, sprite, x, y: -r - 10, r,
       vy: 165 * rand(0.85, 1.15), rot: rand(-0.3, 0.3), vr: rand(-0.8, 0.8),
@@ -507,7 +509,7 @@ export class Engine {
     const cx = W / 2, pw = 490;
     this._panel(c, cx - pw / 2, 14, pw, 112, 26);
     const baby = this.difficulty === 'baby' ? '🍼 ' : '';
-    this._text(c, `${baby}${this.stage?.emoji || ''} 스테이지 ${this.stageNum}`, cx, 52, 36);
+    this._text(c, `${baby}${this.stage?.emoji || ''}${this.stage?.vkey !== 'day' ? this.stage?.variation?.emoji || '' : ''} 스테이지 ${this.stageNum}`, cx, 52, 36);
     const remainSec = Math.max(0, Math.ceil(RULES.STAGE_SEC - this.stageT));
     this._text(c, `남은 ${remainSec}초 · Lv.${this.level}`, cx, 92, 27, remainSec <= 10 && this.rest <= 0 ? '#e8505a' : '#7a6b8f', 'center', 800);
     const k = clamp(this.stageT / RULES.STAGE_SEC, 0, 1);
@@ -542,7 +544,7 @@ export class Engine {
   _drawLobby(c, now) {
     const W = this.W, H = this.H, st = this.stage, inp = this.input;
     this._panel(c, W / 2 - 320, 22, 640, 96, 48);
-    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.name}`, W / 2, 70, 44);
+    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.fullName || st.name}`, W / 2, 70, 44);
     const B = this.lobbyBubble();
     const bob = Math.sin(now / 400) * 8;
     c.save(); c.translate(B.x, B.y + bob);

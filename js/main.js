@@ -1,7 +1,7 @@
 // 와르르 캐치! — 화면 흐름 담당
 import { CONFIG, DIFFICULTY } from './config.js';
-import { $, $$, el, store, formatNum, choice } from './util.js';
-import { STAGES, themeForStage, preloadStageImage } from './stages.js';
+import { $, $$, el, store, formatNum } from './util.js';
+import { THEMES, themeForStage, preloadStageImage } from './stages.js';
 import { Engine } from './game.js';
 import { Sound } from './audio.js';
 import { CameraVision, TouchInput } from './vision.js';
@@ -9,7 +9,7 @@ import { validateName } from './nickname.js';
 import { online, errorText } from './api.js';
 import { addLocal, localBoard, normalizeOnline, clearLocal } from './ranking.js';
 import { renderBoard } from './chart.js';
-import { tryLoadCustomSprites, ALL_IDS } from './sprites.js';
+import { tryLoadCustomSprites, loadItemSheet, ALL_IDS } from './sprites.js';
 import * as fs from './fullscreen.js';
 
 const params = new URLSearchParams(location.search);
@@ -49,7 +49,7 @@ async function prepareStage(st) {
   const ok = await Promise.race([preloadStageImage(st), new Promise((r) => setTimeout(() => r(false), 1500))]);
   if (ok && engine.stage === st) engine.refreshBackground();
 }
-function preloadTheme(st) { if (CONFIG.CUSTOM_BACKGROUNDS) preloadStageImage(st); }
+function preloadTheme(st) { if (CONFIG.CUSTOM_BACKGROUNDS) preloadStageImage(st); if (CONFIG.CUSTOM_ITEMS) loadItemSheet(st); }
 
 // ── 타이틀 ──
 const teamInput = $('#team');
@@ -81,7 +81,7 @@ function goTitle() {
   engine.setInput(null); touch = null; engine.retryTarget = null;
   sound.stopBgm();
   releaseWake();
-  const st = choice(STAGES); currentStage = st;
+  const st = themeForStage(1 + Math.floor(Math.random() * THEMES.length)); currentStage = st;
   engine.showTitle(st);
   prepareStage(st);
   teamInput.value = teamInput.value || recent()[0] || '';

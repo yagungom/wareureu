@@ -19,10 +19,12 @@ export const CONFIG = Object.freeze({
   MAX_PEOPLE: 6,
   WASM_PATH: 'vendor/mediapipe/wasm',
 
-  // 직접 만든 이미지 사용 여부
-  //  배경: assets/bg/<스테이지키>.png|jpg|webp (없으면 코드로 그린 배경)
-  //  캐릭터: assets/characters/<캐릭터id>.png — 넣은 뒤 true 로 바꾸세요
+  // 직접 만든 이미지 사용 여부 (파일이 없으면 코드로 그린 그림을 씀)
+  //  배경: assets/bg/<테마>.png|jpg|webp — 노을·밤·축제는 자동으로 색을 입힘
+  //  아이템: assets/items/<테마>.png — 스티커 6개 시트(3칸×2줄)를 자동으로 잘라 씀
+  //  (예전 방식) 캐릭터 하나씩: assets/characters/<id>.png — 넣은 뒤 CUSTOM_CHARACTERS 를 true 로
   CUSTOM_BACKGROUNDS: true,
+  CUSTOM_ITEMS: true,
   CUSTOM_CHARACTERS: false,
 
   // true 면 카메라 없이 손가락(터치)으로만 플레이 (미리보기용)

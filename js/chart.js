@@ -1,4 +1,4 @@
-// 미니메트로식 랭킹 화면: 점수 분포 막대그래프(우리 팀 위치 표시) + TOP 10 표
+// 랭킹 화면: 상위 N% + 점수 분포(기록이 적으면 팀별 점, 많으면 막대그래프) + TOP 10 표
 import { el, formatNum, formatTime } from './util.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -17,13 +17,12 @@ export function renderBoard(root, board, { myScore = null, myTeam = null, scopeL
   // 요약
   const head = el('div', { class: 'board-head' });
   if (myScore != null && board.my_rank) {
+    // 상위 N% = 내 순위 ÷ 전체 (1등이면 가장 작은 값). 기록이 나 하나면 '첫 기록'
     const pct = Math.max(1, Math.ceil(board.my_rank / board.total * 100));
     head.append(
-      board.my_rank === 1
-        ? el('div', { class: 'pct first' }, el('b', { text: '🏆 1등!' }))
-        : pct <= 50
-          ? el('div', { class: 'pct' }, el('span', { class: 'pct-label', text: '상위' }), el('b', { text: `${pct}%` }))
-          : el('div', { class: 'pct first' }, el('b', { text: `${formatNum(board.my_rank)}등` })),
+      board.total === 1
+        ? el('div', { class: 'pct first' }, el('b', { text: '🎉 첫 기록!' }))
+        : el('div', { class: 'pct' }, el('span', { class: 'pct-label', text: board.my_rank === 1 ? '🏆 상위' : '상위' }), el('b', { text: `${pct}%` })),
       el('div', { class: 'rank-line', text: `${scopeLabel} ${formatNum(board.total)}팀 중 ${formatNum(board.my_rank)}등` }),
     );
   } else {
@@ -32,8 +31,54 @@ export function renderBoard(root, board, { myScore = null, myTeam = null, scopeL
   root.append(head);
 
   const body = el('div', { class: 'board-body' });
-  body.append(histogram(board, myScore), table(board, myTeam, myScore));
+  body.append(board.total < 20 ? dotPlot(board, myScore) : histogram(board, myScore), table(board, myTeam, myScore));
   root.append(body);
+}
+
+// 기록이 적을 때: 팀 하나 = 점 하나. 같은 구간이면 위로 쌓음 (내 팀은 빨간 큰 점)
+function dotPlot(board, myScore) {
+  const wrap = el('div', { class: 'hist card-inner' });
+  wrap.append(el('div', { class: 'card-title', text: '점수 분포 · 점 하나가 한 팀' }));
+  const W = 640, H = 230, L = 24, R = 616, B = 176;
+  const step = board.step, maxX = Math.max(board.max, myScore || 0, step) * 1.06;
+  const X = (v) => L + (v / maxX) * (R - L);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'hist-svg', role: 'img', 'aria-label': '팀별 점수 점 그래프' });
+  svg.append(svgEl('line', { x1: L, x2: R, y1: B, y2: B, class: 'axis' }));
+  const tip = el('div', { class: 'tip', hidden: true });
+  // 내 점수가 들어 있는 구간에서는 한 팀을 '우리 팀' 점으로 따로 그림
+  const myBin = myScore == null ? -1 : Math.floor(myScore / step);
+  let mineLeft = myScore != null;
+  for (const { b, c } of board.bins) {
+    let n = c;
+    if (mineLeft && b === myBin) { n--; mineLeft = false; }
+    for (let k = 0; k < n; k++) {
+      const cx = X((b + 0.5) * step), cy = B - 14 - k * 24;
+      const dot = svgEl('circle', { cx, cy, r: 10, class: 'dot' });
+      const show = () => { tip.textContent = `${formatNum(b * step)}~${formatNum((b + 1) * step - 1)}점`; tip.hidden = false; tip.style.left = `${(cx / W) * 100}%`; };
+      dot.addEventListener('pointerenter', show); dot.addEventListener('pointerdown', show);
+      dot.addEventListener('pointerleave', () => { tip.hidden = true; });
+      svg.append(dot);
+    }
+  }
+  if (myScore != null) {
+    const mx = X(myScore);
+    svg.append(svgEl('line', { x1: mx, x2: mx, y1: 30, y2: B, class: 'marker' }));
+    svg.append(svgEl('circle', { cx: mx, cy: B - 14, r: 14, class: 'dot mine' }));
+    const g = svgEl('g', { transform: `translate(${Math.min(R - 46, Math.max(L + 46, mx))},22)` });
+    g.append(svgEl('rect', { x: -46, y: -14, width: 92, height: 28, rx: 14, class: 'marker-pill' }));
+    const t = svgEl('text', { x: 0, y: 5, 'text-anchor': 'middle', class: 'marker-text' }); t.textContent = '우리 팀';
+    g.append(t); svg.append(g);
+  }
+  // 축 눈금: 0, 중간, 최대
+  for (const v of [0, maxX / 2, maxX]) {
+    const t = svgEl('text', { x: X(v), y: B + 24, class: 'tick', 'text-anchor': v === 0 ? 'start' : v === maxX ? 'end' : 'middle' });
+    t.textContent = formatNum(Math.round(v / 10) * 10); svg.append(t);
+  }
+  const lo = svgEl('text', { x: L, y: H - 4, class: 'tick dim', 'text-anchor': 'start' }); lo.textContent = '← 낮은 점수';
+  const hi = svgEl('text', { x: R, y: H - 4, class: 'tick dim', 'text-anchor': 'end' }); hi.textContent = '높은 점수 →';
+  svg.append(lo, hi);
+  wrap.append(el('div', { class: 'hist-box' }, svg, tip));
+  return wrap;
 }
 
 function histogram(board, myScore) {

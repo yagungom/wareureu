@@ -1,7 +1,11 @@
-// 오리지널 캐릭터 스프라이트 (모두 코드로 그림)
+// 떨어지는 친구들 그림
+//  1순위: ChatGPT 스티커 시트 assets/items/<테마>.png (자동으로 6개로 잘라 씀)
+//  2순위: 코드로 그린 오리지널 캐릭터 (DRAW)
+//  3순위: 이모지 스티커 (시트를 넣기 전 임시)
 // 160x160 디자인 좌표계, 중심 (80,80), 반지름 약 60 기준.
-// assets/characters/<id>.png 가 있으면 그 이미지를 대신 씁니다 (선택).
 import { TAU } from './util.js';
+import { ITEMS, themeByKey } from './themes.js';
+import { sliceSheet } from './sheet.js';
 
 const INK = '#3b2a35';
 const SP = 160;
@@ -447,17 +451,24 @@ export const DRAW = { ...fruit, ...sea, ...animal, ...vehicle, bomb: bombBody, h
 export const BOMB_SPARK = { x: 142, y: 22 };
 
 // ── 캐시 + 스티커 테두리 ──
-const cache = new Map();
-const custom = new Map();
+const MAX_CACHE = 48;             // 한 번에 쓰는 건 폭탄·하트·테마 6개 정도라 넉넉
+const cache = new Map();          // id → 그린 스프라이트 (최근에 쓴 순서)
+const custom = new Map();         // id → 사용자 그림(스티커 시트 등)
+export const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Samsung Color Emoji",sans-serif';
 
-function render(id) {
-  const base = document.createElement('canvas');
-  base.width = base.height = SIZE;
-  const c = base.getContext('2d');
-  c.scale(SCALE, SCALE); c.translate(PAD, PAD);
-  (DRAW[id] || DRAW.apple)(c);
+function emojiArt(c, ch) {
+  c.font = `120px ${EMOJI_FONT}`; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  const m = c.measureText(ch);
+  const l = m.actualBoundingBoxLeft || 60, r = m.actualBoundingBoxRight || 60;
+  const a = m.actualBoundingBoxAscent || 100, d = m.actualBoundingBoxDescent || 20;
+  const k = Math.max(0.6, Math.min(1.6, 150 / Math.max(1, l + r, a + d)));
+  c.save(); c.translate(SP / 2, SP / 2); c.scale(k, k);
+  c.fillText(ch, (l - r) / 2, (a - d) / 2);
+  c.restore();
+}
 
-  // 흰색 스티커 테두리 + 그림자 (배경 위에서 잘 보이게)
+// 흰색 스티커 테두리 + 그림자 (배경 위에서 잘 보이게)
+function stickerize(base) {
   const out = document.createElement('canvas');
   out.width = out.height = SIZE;
   const o = out.getContext('2d');
@@ -471,55 +482,115 @@ function render(id) {
   const f = fin.getContext('2d');
   f.shadowColor = 'rgba(20,10,40,0.35)'; f.shadowBlur = 10; f.shadowOffsetY = 6;
   f.drawImage(out, 0, 0);
+  markProbe(fin);
   return fin;
 }
 
+// 지워짐 검사용: 확실히 그림이 있는 점 하나를 기억 (도넛처럼 가운데가 빈 그림도 있어서)
+function markProbe(cv) {
+  try {
+    const c = cv.getContext('2d'), d = c.getImageData(0, 0, cv.width, cv.height).data, n = cv.width;
+    for (let rad = 0; rad < n / 2; rad += 4) {
+      for (let k = 0; k < 16; k++) {
+        const a = k / 16 * TAU, x = Math.round(n / 2 + Math.cos(a) * rad), y = Math.round(n / 2 + Math.sin(a) * rad);
+        if (x >= 0 && y >= 0 && x < n && y < n && d[(y * n + x) * 4 + 3] > 200) { cv._probe = [x, y]; return; }
+      }
+    }
+  } catch { /* 읽기 실패 → 가운데 점으로 검사 */ }
+}
+
+function render(id) {
+  const base = document.createElement('canvas');
+  base.width = base.height = SIZE;
+  const c = base.getContext('2d');
+  c.scale(SCALE, SCALE); c.translate(PAD, PAD);
+  const def = ITEMS.get(id);
+  const fn = DRAW[id] || (def?.draw && DRAW[def.draw]);
+  if (fn) fn(c); else if (def) emojiArt(c, def.emoji); else DRAW.apple(c);
+  return stickerize(base);
+}
+
 export function getSprite(id) {
-  if (custom.has(id)) return custom.get(id);
+  const u = custom.get(id); if (u) return u;
   let s = cache.get(id);
-  if (!s) {
-    s = render(id); cache.set(id, s);
-    // 안드로이드는 화면 전환(미러링 시작·앱 전환 등) 때 그려둔 이미지를 지우기도 함 → 다시 그리게
-    s.addEventListener?.('contextlost', () => { if (cache.get(id) === s) cache.delete(id); });
-  }
+  if (s) { cache.delete(id); cache.set(id, s); return s; } // 최근 사용으로 올림
+  s = render(id); cache.set(id, s);
+  // 안드로이드는 화면 전환(미러링 시작·앱 전환 등) 때 그려둔 이미지를 지우기도 함 → 다시 그리게
+  s.addEventListener?.('contextlost', () => { if (cache.get(id) === s) cache.delete(id); });
+  if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
   return s;
 }
 
-// 그려둔 이미지가 지워졌는지 가운데 점 하나로 확인하고, 지워졌으면 다시 그림
+function lost(s) {
+  try {
+    const [x, y] = s._probe || [s.width >> 1, s.height >> 1];
+    return s.getContext('2d').getImageData(x, y, 1, 1).data[3] === 0;
+  } catch { return true; }
+}
+
+// 그려둔 이미지가 지워졌는지 점 하나로 확인하고, 지워졌으면 다시 그림
 export function validateSprites(ids) {
   let fixed = 0;
   for (const id of ids) {
-    const s = cache.get(id); if (!s) continue;
-    try {
-      const a = s.getContext('2d').getImageData(s.width >> 1, s.height >> 1, 1, 1).data[3];
-      if (a === 0) { cache.delete(id); fixed++; }
-    } catch { cache.delete(id); fixed++; }
+    const s = cache.get(id);
+    if (s && lost(s)) { cache.delete(id); fixed++; }
+    const u = custom.get(id);
+    if (u && lost(u)) { custom.delete(id); sheets.delete(ITEMS.get(id)?.theme); fixed++; } // 시트는 다시 불러옴
   }
   return fixed;
 }
-export function clearSpriteCache() { cache.clear(); custom.clear(); }
+export function clearSpriteCache() { cache.clear(); custom.clear(); sheets.clear(); }
 
 // 스프라이트 반지름 60(디자인) → 화면 반지름 r 일 때 그릴 크기
 export function spriteDrawSize(r) { return SIZE / SCALE * (r / 60); }
 
-// 사용자 PNG 교체: assets/characters/<id>.png (투명 배경 권장). 있을 때만 사용
+// 잘라낸 그림을 스프라이트 크기에 맞춰 스티커로
+function fitPiece(piece) {
+  const base = document.createElement('canvas');
+  base.width = base.height = SIZE;
+  const c = base.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  const inner = 156 * SCALE;
+  const k = Math.min(inner / piece.width, inner / piece.height);
+  const w = piece.width * k, h = piece.height * k;
+  c.drawImage(piece, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
+  return stickerize(base);
+}
+
+// ── ChatGPT 스티커 시트: assets/items/<테마>.png ──
+const sheets = new Map(); // 테마 key → Promise<boolean> (최근 4개 테마만 메모리에 둠)
+const MAX_SHEETS = 4;
+function loadImage(src) {
+  return new Promise((res) => { const img = new Image(); img.decoding = 'async'; img.onload = () => res(img); img.onerror = () => res(null); img.src = src; });
+}
+export function loadItemSheet(theme) {
+  const t = typeof theme === 'string' ? themeByKey(theme) : theme;
+  const key = t.key;
+  if (sheets.has(key)) { const p = sheets.get(key); sheets.delete(key); sheets.set(key, p); return p; }
+  const p = (async () => {
+    const img = await loadImage(`assets/items/${key}.png`);
+    if (!img || sheets.get(key) !== p) return false;
+    let res;
+    try { res = sliceSheet(img, t.items.length); } catch (e) { console.warn('[sheet]', key, e); return false; }
+    if (sheets.get(key) !== p) return false;
+    let n = 0;
+    t.items.forEach((it, i) => { const pc = res.pieces[i]; if (pc) { custom.set(it.id, fitPiece(pc)); n++; } });
+    console.info(`[sheet] ${key}: ${n}/${t.items.length} (${res.mode})`);
+    return n > 0;
+  })();
+  sheets.set(key, p);
+  while (sheets.size > MAX_SHEETS) {
+    const old = sheets.keys().next().value; sheets.delete(old);
+    for (const it of themeByKey(old).items) custom.delete(it.id);
+  }
+  return p;
+}
+
+// (예전 방식) 캐릭터 하나씩: assets/characters/<id>.png
 export function tryLoadCustomSprites(ids) {
   for (const id of ids) {
     if (custom.has(id)) continue;
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = () => {
-      const cv = document.createElement('canvas'); cv.width = cv.height = SIZE;
-      const c = cv.getContext('2d');
-      const inner = SIZE * (120 / (SP + PAD * 2));
-      const k = Math.min(inner / img.width, inner / img.height);
-      const w = img.width * k, h = img.height * k;
-      c.shadowColor = 'rgba(20,10,40,0.35)'; c.shadowBlur = 10; c.shadowOffsetY = 6;
-      c.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
-      custom.set(id, cv);
-    };
-    img.onerror = () => {};
-    img.src = `assets/characters/${id}.png`;
+    loadImage(`assets/characters/${id}.png`).then((img) => { if (img) custom.set(id, fitPiece(img)); });
   }
 }
 
