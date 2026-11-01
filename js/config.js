@@ -36,7 +36,8 @@ export const CONFIG = Object.freeze({
 });
 
 // 점수·진행 규칙 — supabase/schema.sql 의 submit_score 검증과 숫자가 같아야 합니다.
-//  점수 = 잡은 점수 + 버틴 초 × 3 + 클리어 보너스(클리어한 스테이지 번호 × 100 의 합)
+//  점수 = 잡은 점수 − 놓친 감점 + 버틴 초 × 3 + 클리어 보너스(클리어한 스테이지 번호 × 100 의 합), 0점 아래로는 안 내려감
+//  놓친 감점·하트 규칙은 아래 DIFFICULTY 의 missPoints / missPerHeart (서버도 같은 숫자 사용)
 export const RULES = Object.freeze({
   LIVES: 5,                 // 한 게임 최대 생명
   CATCH_BASE: 10,           // 캐릭터 1개 기본 점수
@@ -47,15 +48,16 @@ export const RULES = Object.freeze({
   LEVEL_SEC: 20,            // 이 시간마다 레벨(속도) +1 → 스테이지 N 은 Lv.N ~ Lv.N+4
   CLEAR_BONUS: 100,         // 스테이지 N 클리어 시 N × 100 점
   REST_SEC: 3,              // 스테이지 사이 휴식
-  NO_BOMB_FIRST_SEC: 5,     // 게임 시작 후 몇 초간은 폭탄 없음 (아이들 적응용)
+  NO_BOMB_FIRST_SEC: 5,     // 게임 시작 후 몇 초간은 폭탄 없음·놓쳐도 감점 없음 (아이들 적응용, 아기 모드는 2배)
   BOMB_GRACE_MS: 700,       // 폭탄 연속 피격 보호 시간
   ABSENT_PAUSE_MS: 4000,    // 화면에 사람이 없으면 이 시간 뒤 자동 일시정지
 });
 
 // 난이도: 레벨이 오를수록 빨라지고 자주 떨어지며 폭탄이 늘어남 (상한 있음)
 export const DIFFICULTY = Object.freeze({
-  normal: { label: '일반', speed: 1.0, speedCap: 3.0, interval: 1.0, bomb: 1.0, bombCap: 0.38, heart: 0.025, radius: 0 },
-  baby: { label: '아기 모드', speed: 0.68, speedCap: 1.9, interval: 1.15, bomb: 0.5, bombCap: 0.2, heart: 0.05, radius: 8 },
+//  missPoints: 친구를 놓칠 때마다 깎이는 점수 · missPerHeart: 이만큼 놓치면 생명 −1
+  normal: { label: '일반', speed: 1.0, speedCap: 3.0, interval: 1.0, bomb: 1.0, bombCap: 0.38, heart: 0.025, radius: 0, missPoints: 10, missPerHeart: 5 },
+  baby: { label: '아기 모드', speed: 0.68, speedCap: 1.9, interval: 1.15, bomb: 0.5, bombCap: 0.2, heart: 0.05, radius: 8, missPoints: 5, missPerHeart: 8 },
 });
 
 // 화질 프리셋: 사람 분리 입력 크기 + 자세 인식 입력 크기·모델

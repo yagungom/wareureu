@@ -53,6 +53,8 @@ export class Sound {
       this.tone(140, 0.35, { type: 'sine', vol: 0.5, slide: 45 });
     });
   }
+  miss() { this.sfx(() => this.tone(330, 0.16, { type: 'triangle', vol: 0.12, slide: 220 })); }
+  missHeart() { this.sfx(() => [392, 330, 262].forEach((f, i) => this.tone(f, 0.14, { type: 'square', vol: 0.1, when: i * 0.09 }))); }
   heart() { this.sfx(() => [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, { type: 'triangle', vol: 0.2, when: i * 0.07 }))); }
   beep(hi = false) { this.sfx(() => this.tone(hi ? 880 : 523, hi ? 0.35 : 0.18, { type: 'square', vol: 0.12 })); }
   tick() { this.sfx(() => this.tone(1200, 0.04, { type: 'sine', vol: 0.06 })); }

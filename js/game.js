@@ -30,6 +30,7 @@ export class Engine {
   reset() {
     this.items.length = 0; this.parts.length = 0; this.texts.length = 0; this.booms.length = 0;
     this.lives = RULES.LIVES; this.catches = 0; this.catchPoints = 0; this.combo = 0; this.bestCombo = 0;
+    this.misses = 0; this.missPoints = 0; this.missCount = 0; this.missFlash = 0;
     this.lastCatchAt = -1e9; this.lastBombAt = -1e9;
     this.t = 0; this.spawnIn = 0.8; this.level = 1; this.shake = 0;
     this.stageNum = 1; this.stageT = 0; this.rest = 0; this.cleared = 0; this.clearBonus = 0; this._switched = false;
@@ -37,7 +38,7 @@ export class Engine {
     this.lastSpawnX = -999; this.banner = null; this.countT = 0; this.startProg = 0;
   }
 
-  get score() { return this.catchPoints + Math.floor(this.t) * RULES.TIME_POINTS_PER_SEC + this.clearBonus; }
+  get score() { return Math.max(0, this.catchPoints - this.missPoints + Math.floor(this.t) * RULES.TIME_POINTS_PER_SEC + this.clearBonus); }
   get diff() { return DIFFICULTY[this.difficulty] || DIFFICULTY.normal; }
   setDifficulty(d) { this.difficulty = DIFFICULTY[d] ? d : 'normal'; }
   levelFor(stageNum, stageT) { return stageNum + Math.min(4, Math.floor(stageT / RULES.LEVEL_SEC)); }
@@ -198,9 +199,10 @@ export class Engine {
   // 난이도 곡선: 레벨(스테이지 N → Lv.N~N+4)이 오를수록 빨라지고 자주 떨어지며 폭탄이 늘어남
   speedMul() { const d = this.diff; return Math.min((1 + (this.level - 1) * 0.12) * d.speed, d.speedCap); }
   spawnInterval() { return Math.max(0.38, 1.25 / (1 + (this.level - 1) * 0.14)) * this.diff.interval; }
+  graceSec() { return RULES.NO_BOMB_FIRST_SEC * (this.difficulty === 'baby' ? 2 : 1); }
   bombChance() {
-    const d = this.diff, noBomb = RULES.NO_BOMB_FIRST_SEC * (this.difficulty === 'baby' ? 2 : 1);
-    if (this.t < noBomb) return 0;
+    const d = this.diff;
+    if (this.t < this.graceSec()) return 0;
     return Math.min((0.12 + (this.level - 1) * 0.022) * d.bomb, d.bombCap);
   }
 
@@ -252,7 +254,7 @@ export class Engine {
       it.y += it.vy * mul * dt;
       it.x = it.x0 + Math.sin(it.age * it.swayF + it.ph) * it.swayA;
       it.rot += it.vr * dt;
-      if (it.y - it.r > this.H + 10) { this.items.splice(i, 1); continue; }
+      if (it.y - it.r > this.H + 10) { this.items.splice(i, 1); if (collide && it.kind === 'char') this._miss(it, now); continue; }
       if (!collide || !inp || it.y < it.r * 0.3) continue;
       const need = it.kind === 'bomb' ? 3 : 2;
       if (inp.hitTest(it.x, it.y, it.r, need)) this._hit(it, now);
@@ -292,11 +294,33 @@ export class Engine {
     }
   }
 
+  // 친구를 놓침: 감점 + 콤보 끊김, 일정 수 놓치면 생명 −1
+  _miss(it, now) {
+    if (this.state !== 'play' || this.t < this.graceSec()) return;
+    const d = this.diff;
+    // 감점은 지금 점수까지만 (0점 아래로 빚이 쌓이면 잡아도 점수가 안 올라 보여서)
+    const pts = Math.min(d.missPoints, this.score);
+    this.misses++; this.missPoints += pts; this.combo = 0;
+    this.missCount++; this.missFlash = 1;
+    const x = clamp(it.x, 60, this.W - 60), y = this.H - 46;
+    this.texts.push({ x, y, text: pts > 0 ? `−${pts}` : '놓쳤어요', life: 0, max: 0.9, size: pts > 0 ? 46 : 36, color: '#ff6b6b' });
+    this._burst(x, this.H - 10, 8, ['#c9bfd8', '#ffffff', '#ff8fab']);
+    if (this.missCount >= d.missPerHeart) {
+      this.missCount = 0;
+      this.lives--;
+      this.shake = 0.25;
+      this.texts.push({ x, y: y - 56, text: '앗! 생명 −1', life: 0, max: 1.1, size: 44, color: '#ff4d6d' });
+      this.sound.missHeart();
+      this.emit('lifeLost', this.lives);
+      if (this.lives <= 0) this._gameOver();
+    } else this.sound.miss();
+  }
+
   _gameOver() {
     this.state = 'over';
     this.retryProg = 0;
     const res = {
-      score: this.score, catches: this.catches, catchPoints: this.catchPoints,
+      score: this.score, catches: this.catches, catchPoints: this.catchPoints, misses: this.misses, missPoints: this.missPoints,
       survivalMs: Math.floor(this.t * 1000 + 1e-6), bestCombo: this.bestCombo, input: this.input?.kind || 'touch',
       difficulty: this.difficulty, reachedStage: this.stageNum, cleared: this.cleared, clearBonus: this.clearBonus,
       themeKey: this.stage.key,
@@ -330,6 +354,7 @@ export class Engine {
     for (let i = this.texts.length - 1; i >= 0; i--) { const t = this.texts[i]; t.life += dt; t.y -= 70 * dt; if (t.life > t.max) this.texts.splice(i, 1); }
     for (let i = this.booms.length - 1; i >= 0; i--) { const b = this.booms[i]; b.t += dt; if (b.t > 0.55) this.booms.splice(i, 1); }
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
+    if (this.missFlash > 0) this.missFlash = Math.max(0, this.missFlash - dt * 3);
   }
 
   _updateAmbient(dt) {
@@ -499,11 +524,24 @@ export class Engine {
     if (this.combo >= 2 && this.state === 'play') this._text(c, `콤보 x${this.combo}`, 330, 50, 28, '#ff6b6b', 'right', 900);
     // 생명
     const step = 68, hw = step * RULES.LIVES + 28;
-    this._panel(c, W - hw - 16, 14, hw, 96, 26);
+    this._panel(c, W - hw - 16, 14, hw, 132, 26);
     for (let i = 0; i < RULES.LIVES; i++) {
-      const x = W - hw - 16 + 48 + i * step, y = 62, on = i < this.lives;
+      const x = W - hw - 16 + 48 + i * step, y = 58, on = i < this.lives;
       const s = on && i === this.lives - 1 && this.lives <= 2 ? 1 + 0.08 * Math.sin(now / 120) : 1;
       this._heart(c, x, y, 31 * s, on ? '#ff4d6d' : 'rgba(120,110,140,0.35)');
+    }
+    // 놓침 칸: 다 차면 생명 −1
+    const per = this.diff.missPerHeart, px = W - hw - 16 + 26, py = 112;
+    this._text(c, '놓침', px, py, 22, '#7a6b8f', 'left', 800);
+    const gx = px + 70, gw = hw - 70 - 46, gap = gw / per;
+    const danger = this.missCount === per - 1;
+    const pulse = danger ? 1 + 0.15 * Math.sin(now / 110) : 1;
+    for (let i = 0; i < per; i++) {
+      const on = i < this.missCount;
+      const rr = (per > 6 ? 9 : 11) * (on && i === this.missCount - 1 && this.missFlash > 0 ? 1 + this.missFlash * 0.6 : 1) * (danger && !on ? pulse : 1);
+      c.beginPath(); c.arc(gx + gap * (i + 0.5), py, rr, 0, TAU);
+      c.fillStyle = on ? '#ff6b6b' : (danger ? '#ffd6dc' : '#ece4f7'); c.fill();
+      c.lineWidth = 2.5; c.strokeStyle = on ? INK : '#cfc3e0'; c.stroke();
     }
     // 스테이지·남은 시간·레벨
     const cx = W / 2, pw = 490;

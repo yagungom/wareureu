@@ -84,6 +84,7 @@ do $$ begin
 end $$;
 drop index if exists private.scores_mode_time_idx;
 drop index if exists private.scores_mode_score_idx;
+alter table private.scores add column if not exists misses int not null default 0;  -- 놓친 친구 수
 create index if not exists scores_mode_input_time_idx  on private.scores (mode, input, created_at desc);
 create index if not exists scores_mode_input_score_idx on private.scores (mode, input, score desc);
 
@@ -185,12 +186,16 @@ end $$;
 
 -- 2) 점수 등록: 세션당 1회, 서버 시계·점수 공식으로 검증 (js/config.js RULES 와 동일)
 --    스테이지 = 100초. 클리어 수 c = 버틴ms / 100000 (게임은 사망으로만 끝나므로)
---    점수 = 잡은점수(캐릭터당 10~20) + 버틴초 × 3 + 100 × (1+2+…+c)
+--    점수 = 잡은점수(캐릭터당 10~20) − 놓친 감점 + 버틴초 × 3 + 100 × (1+2+…+c)
+--    놓친 감점: 1마리당 최대 일반 10 / 아기 5 (그때 점수보다 많이 깎지 않아서 0~최대 사이)
+drop function if exists public.submit_score(uuid, int, int, int, int);
+drop function if exists public.submit_score(uuid, int, int, int, int, int);
 create or replace function public.submit_score(
-  p_session uuid, p_score int, p_catches int, p_catch_points int, p_survival_ms int)
+  p_session uuid, p_score int, p_catches int, p_catch_points int, p_survival_ms int,
+  p_misses int default 0, p_miss_points int default 0)
 returns json language plpgsql volatile security definer set search_path = '' as $$
 declare
-  s record; v_elapsed_ms bigint; v_cleared bigint; v_expected bigint; v_rank int; v_total int; v_from timestamptz;
+  s record; v_elapsed_ms bigint; v_cleared bigint; v_expected bigint; v_miss_pts bigint; v_rank int; v_total int; v_from timestamptz;
 begin
   -- 세션 소모 (실패해도 다시 쓸 수 없음 → 숫자 바꿔가며 재시도 불가)
   update private.game_sessions
@@ -199,23 +204,26 @@ begin
   returning mode, input, team_name, started_at into s;
   if not found then return json_build_object('ok', false, 'reason', 'invalid_session'); end if;
 
-  if p_score is null or p_catches is null or p_catch_points is null or p_survival_ms is null then
+  if p_score is null or p_catches is null or p_catch_points is null or p_survival_ms is null or p_misses is null or p_miss_points is null then
     return json_build_object('ok', false, 'reason', 'implausible');
   end if;
 
   v_elapsed_ms := floor(extract(epoch from (now() - s.started_at)) * 1000)::bigint;
   v_cleared := p_survival_ms / 100000;
-  v_expected := p_catch_points::bigint + (p_survival_ms / 1000)::bigint * 3 + 100 * v_cleared * (v_cleared + 1) / 2;
+  v_miss_pts := p_misses::bigint * (case when s.mode = 'baby' then 5 else 10 end);  -- 감점 최대치
+  v_expected := greatest(0, p_catch_points::bigint - p_miss_points + (p_survival_ms / 1000)::bigint * 3 + 100 * v_cleared * (v_cleared + 1) / 2);
   if p_survival_ms < 1000 or p_survival_ms > v_elapsed_ms + 3000                 -- 실제 흐른 시간보다 오래 버틸 수 없음
      or p_catches < 0 or p_catches > floor(p_survival_ms / 1000.0 * 3) + 5        -- 초당 3개 이상 못 잡음
      or p_catch_points < p_catches * 10 or p_catch_points > p_catches * 20        -- 캐릭터당 10~20점
+     or p_misses < 0 or p_misses > floor(p_survival_ms / 1000.0 * 4) + 10         -- 초당 4개 이상 놓칠 수 없음
+     or p_miss_points < 0 or p_miss_points > v_miss_pts                             -- 1마리당 최대 감점
      or p_score::bigint <> v_expected                                              -- 점수 공식
      or p_score > 100000000 then
     return json_build_object('ok', false, 'reason', 'implausible');
   end if;
 
-  insert into private.scores (mode, input, team_name, score, catches, survival_ms, reached_stage)
-  values (s.mode, s.input, s.team_name, p_score, p_catches, p_survival_ms, (v_cleared + 1)::int);
+  insert into private.scores (mode, input, team_name, score, catches, survival_ms, reached_stage, misses)
+  values (s.mode, s.input, s.team_name, p_score, p_catches, p_survival_ms, (v_cleared + 1)::int, p_misses);
 
   v_from := private.period_from('day');
   select count(*) filter (where sc.score > p_score) + 1, count(*)
@@ -265,19 +273,19 @@ end $$;
 
 -- ── 실행 권한: 공개 함수 3개만 ──
 revoke all on function public.start_session(text, text, text) from public;
-revoke all on function public.submit_score(uuid, int, int, int, int) from public;
+revoke all on function public.submit_score(uuid, int, int, int, int, int, int) from public;
 revoke all on function public.get_leaderboard(text, text, int, text) from public;
 revoke all on all functions in schema private from public;
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     execute 'grant execute on function public.start_session(text, text, text) to anon';
-    execute 'grant execute on function public.submit_score(uuid, int, int, int, int) to anon';
+    execute 'grant execute on function public.submit_score(uuid, int, int, int, int, int, int) to anon';
     execute 'grant execute on function public.get_leaderboard(text, text, int, text) to anon';
     execute 'revoke all on all functions in schema private from anon';
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     execute 'grant execute on function public.start_session(text, text, text) to authenticated';
-    execute 'grant execute on function public.submit_score(uuid, int, int, int, int) to authenticated';
+    execute 'grant execute on function public.submit_score(uuid, int, int, int, int, int, int) to authenticated';
     execute 'grant execute on function public.get_leaderboard(text, text, int, text) to authenticated';
     execute 'revoke all on all functions in schema private from authenticated';
   end if;

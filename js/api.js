@@ -37,10 +37,15 @@ export const online = {
     catch (e) { if (e?.status === 404 && input === 'camera') return this.rpc(fn, body); throw Object.assign(e, { code: e?.status === 404 ? 'server_update' : e?.code }); }
   },
   startSession(mode, team, input = 'camera') { return this.withLegacy('start_session', { p_mode: mode, p_team: team }, input); },
-  submit(sessionId, r) {
-    return this.rpc('submit_score', {
-      p_session: sessionId, p_score: r.score, p_catches: r.catches, p_catch_points: r.catchPoints, p_survival_ms: r.survivalMs,
-    });
+  // 놓친 수(p_misses)를 함께 보냄. 서버 SQL 이 이전 버전(404)이면 놓친 게 없을 때만 예전 방식으로 다시 시도
+  async submit(sessionId, r) {
+    const body = { p_session: sessionId, p_score: r.score, p_catches: r.catches, p_catch_points: r.catchPoints, p_survival_ms: r.survivalMs };
+    try { return await this.rpc('submit_score', { ...body, p_misses: r.misses || 0, p_miss_points: r.missPoints || 0 }); }
+    catch (e) {
+      if (e?.status !== 404) throw e;
+      if (!r.missPoints) return this.rpc('submit_score', body);
+      throw Object.assign(e, { code: 'server_update' });
+    }
   },
   board(mode, period, myScore = null, input = 'camera') {
     return this.withLegacy('get_leaderboard', { p_mode: mode, p_period: period, p_score: myScore }, input);

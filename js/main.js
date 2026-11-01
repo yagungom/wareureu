@@ -309,12 +309,13 @@ const diffLabel = (d) => (d === 'baby' ? '🍼 아기 모드' : '🙂 일반');
 
 async function showResult(res) {
   lastResult = { ...res, team };
-  addLocal({ team, mode: res.difficulty, score: res.score, catches: res.catches, catchPoints: res.catchPoints, survivalMs: res.survivalMs, reachedStage: res.reachedStage, input: res.input });
+  addLocal({ team, mode: res.difficulty, score: res.score, catches: res.catches, catchPoints: res.catchPoints, misses: res.misses || 0, survivalMs: res.survivalMs, reachedStage: res.reachedStage, input: res.input });
   const st = themeForStage(res.reachedStage);
   $('#res-team').textContent = team;
   $('#res-stage').textContent = `${st.emoji} 스테이지 ${res.reachedStage}까지 · ${diffLabel(res.difficulty)}`;
   $('#res-score').textContent = formatNum(res.score);
   $('#res-catch').textContent = `${res.catches}마리 (+${formatNum(res.catchPoints)})`;
+  $('#res-miss').textContent = res.misses ? `${res.misses}마리 (−${formatNum(res.missPoints)})` : '없음 👏';
   $('#res-time').textContent = `${Math.floor(res.survivalMs / 1000)}초 (+${formatNum(Math.floor(res.survivalMs / 1000) * 3)})`;
   $('#res-bonus').textContent = res.cleared ? `${res.cleared}개 (+${formatNum(res.clearBonus)})` : '-';
   $('#res-combo').textContent = res.bestCombo >= 2 ? `${res.bestCombo}연속` : '-';
