@@ -1,6 +1,6 @@
 // 와르르 캐치! — 화면 흐름 담당
 import { CONFIG, DIFFICULTY } from './config.js';
-import { $, $$, el, store, formatNum } from './util.js';
+import { $, $$, el, store, formatNum, clamp } from './util.js';
 import { THEMES, themeForStage, preloadStageImage } from './stages.js';
 import { Engine } from './game.js';
 import { Sound } from './audio.js';
@@ -69,7 +69,33 @@ function renderMode() {
   $('#facing-row').hidden = settings.play !== 'camera';
   $$('.seg-btn[data-facing]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.facing === settings.facing)));
   $$('.seg-btn[data-diff]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.diff === settings.difficulty)));
+  applyLayout();
 }
+
+// ── 화면 채우기 ──
+//  📱 폰 모드: 폰 화면 전체를 씀 (가로·세로 모두, 게임 화면비도 폰에 맞춤)
+//  📺 카메라 모드: TV 미러링용 16:9 고정
+const stageEl = $('#stage');
+const isFill = () => settings.play === 'touch' || params.has('touch') || CONFIG.FORCE_TOUCH;
+function applyLayout() {
+  const fill = engine.input ? engine.input.kind === 'touch' : isFill();
+  document.body.classList.toggle('fill', fill);
+  let W = CONFIG.W, H = CONFIG.H;
+  if (fill) {
+    const r = stageEl.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      const a = clamp(r.width / r.height, 0.4, 2.5); // 짧은 쪽 = 720
+      if (a >= 1) { H = 720; W = 720 * a; } else { W = 720; H = 720 / a; }
+    }
+  }
+  engine.resize(W, H);
+  checkRotate();
+}
+let layoutRaf = 0;
+function queueLayout() { cancelAnimationFrame(layoutRaf); layoutRaf = requestAnimationFrame(applyLayout); }
+window.addEventListener('resize', queueLayout);
+window.visualViewport?.addEventListener('resize', queueLayout);
+window.addEventListener('orientationchange', () => setTimeout(applyLayout, 250));
 $$('.seg-btn[data-play]').forEach((b) => b.addEventListener('click', () => { settings.play = b.dataset.play; saveSettings(); renderMode(); }));
 $$('.seg-btn[data-facing]').forEach((b) => b.addEventListener('click', () => { settings.facing = b.dataset.facing; settings.cameraId = ''; saveSettings(); renderMode(); }));
 $$('.seg-btn[data-diff]').forEach((b) => b.addEventListener('click', () => { settings.difficulty = b.dataset.diff; saveSettings(); renderMode(); }));
@@ -176,6 +202,7 @@ async function startCameraGame() {
     await vision.init((msg) => { $('#loading-text').textContent = msg; });
     if (loadCancelled) { vision.stopCamera(); return; }
     engine.setInput(vision);
+    applyLayout();
     await enterLobby();
   } catch (e) {
     console.warn(e);
@@ -188,6 +215,7 @@ function startTouchGame() {
   if (vision) vision.stopCamera();
   touch = new TouchInput(canvas);
   engine.setInput(touch);
+  applyLayout();
   sound.unlock();
   enterLobby();
 }
@@ -214,6 +242,7 @@ async function enterLobby() {
   engine.setDifficulty(settings.difficulty);
   engine.enterLobby();
   currentStage = engine.stage;
+  $('#btn-cam-switch').hidden = engine.input?.kind !== 'camera'; // 폰 모드는 카메라를 안 씀
   show('lobby');
   sound.stopBgm();
   prepareStage(currentStage);
@@ -350,7 +379,7 @@ function setupRetryBubble(mode) {
   if (mode !== 'camera') return;
   requestAnimationFrame(() => {
     const cr = canvas.getBoundingClientRect(), br = bubble.getBoundingClientRect();
-    const k = CONFIG.W / cr.width;
+    const k = canvas.width / cr.width;
     engine.retryTarget = { x: (br.left + br.width / 2 - cr.left) * k, y: (br.top + br.height / 2 - cr.top) * k, r: br.width / 2 * k };
   });
 }
@@ -466,11 +495,15 @@ $('#confirm-yes').addEventListener('click', () => confirmFn?.());
 $('#btn-clear').addEventListener('click', () => confirmDialog('이 기기 기록을 모두 지울까요?', () => clearLocal(), 'settings'));
 
 // ── 세로 화면 안내 ──
-const portrait = window.matchMedia('(orientation: portrait)');
+// 카메라 모드만 가로 화면 안내 (폰 모드는 세로로 들고 해도 꽉 차게)
 let rotateDismissed = false;
-function checkRotate() { $('#rotate-hint').hidden = !(portrait.matches && !rotateDismissed); }
-portrait.addEventListener?.('change', checkRotate);
+function checkRotate() {
+  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  $('#rotate-hint').hidden = !(portrait && !rotateDismissed && !document.body.classList.contains('fill'));
+}
+window.matchMedia('(orientation: portrait)').addEventListener?.('change', checkRotate);
 $('#rotate-dismiss').addEventListener('click', () => { rotateDismissed = true; checkRotate(); });
+$('#rotate-touch').addEventListener('click', () => { settings.play = 'touch'; saveSettings(); renderMode(); });
 
 // ── 시작 ──
 applySettings();

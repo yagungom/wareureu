@@ -437,7 +437,14 @@ export function getBackground(stage, W, H) {
   if (own) coverDraw(c, own, W, H);
   else {
     if (base) coverDraw(c, base, W, H);
-    else { noSun = vkey === 'night'; c.save(); c.scale(W / 1280, H / 720); (PAINT[t.key] || PAINT.beach)(c, 1280, 720); c.restore(); noSun = false; }
+    else {
+      // 코드 배경은 1280×720 으로 그려 두고, 화면비가 다르면 꽉 차게 확대해 가운데를 씀 (늘어나지 않게)
+      const k = Math.max(W / 1280, H / 720);
+      noSun = vkey === 'night';
+      c.save(); c.translate((W - 1280 * k) / 2, (H - 720 * k) / 2); c.scale(k, k);
+      (PAINT[t.key] || PAINT.beach)(c, 1280, 720);
+      c.restore(); noSun = false;
+    }
     applyVariation(c, W, H, vkey, (t.id || 1) * 7919, t.key);
   }
   bgCache.set(cacheKey, cv);

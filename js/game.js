@@ -54,6 +54,25 @@ export class Engine {
   }
   refreshBackground() { if (this.stage) this.bg = getBackground(this.stage, this.W, this.H); }
 
+  // 화면 크기 바꾸기 (폰 모드는 폰 화면비 그대로 꽉 채움, 카메라 모드는 16:9 고정)
+  //  짧은 쪽이 항상 720 이라 친구 크기·떨어지는 시간은 어느 화면이든 같음
+  resize(W, H) {
+    W = Math.round(W); H = Math.round(H);
+    if (W === this.W && H === this.H) return false;
+    const kx = W / this.W, ky = H / this.H;
+    for (const it of this.items) { it.x *= kx; it.x0 *= kx; it.y *= ky; }
+    for (const p of this.parts) { p.x *= kx; p.y *= ky; }
+    for (const t of this.texts) { t.x *= kx; t.y *= ky; }
+    for (const b of this.booms) { b.x *= kx; b.y *= ky; }
+    this.ambient.length = 0;
+    this.W = W; this.H = H; this.cv.width = W; this.cv.height = H;
+    this.prevBg = null; this.fade = 1;
+    if (this.stage) this.bg = getBackground(this.stage, W, H);
+    return true;
+  }
+  // 가운데 안내 글씨 크기 (좁은 화면에서는 줄임)
+  get uiScale() { return Math.min(1, this.W / 1100); }
+
   showTitle(stage) { this.setStage(stage); this.reset(); this.state = 'title'; this.spawnIn = 0.2; }
   enterLobby() { this.setStage(themeForStage(1)); this.reset(); this.state = 'lobby'; this.emit('state', 'lobby'); }
 
@@ -251,7 +270,7 @@ export class Engine {
       const it = this.items[i];
       it.age += dt;
       if (it.state !== 'fall') { it.st += dt; if (it.st > 0.28) this.items.splice(i, 1); continue; }
-      it.y += it.vy * mul * dt;
+      it.y += it.vy * mul * dt * (this.H / 720);
       it.x = it.x0 + Math.sin(it.age * it.swayF + it.ph) * it.swayA;
       it.rot += it.vr * dt;
       if (it.y - it.r > this.H + 10) { this.items.splice(i, 1); if (collide && it.kind === 'char') this._miss(it, now); continue; }
@@ -330,7 +349,7 @@ export class Engine {
     this.emit('state', 'over');
   }
 
-  lobbyBubble() { return { x: this.W / 2, y: 230, r: 92 }; }
+  lobbyBubble() { return { x: this.W / 2, y: Math.max(230, this.H * 0.34), r: 92 }; }
 
   // ── 연출 ──
   _burst(x, y, n, colors) {
@@ -514,24 +533,39 @@ export class Engine {
     c.fillStyle = color; c.fillText(s, x, y);
   }
 
-  // TV로 멀리서 보기 좋게 큼직하게 (예전 대비 약 1.3배)
+  // TV로 멀리서 보기 좋게 큼직하게. 화면 폭에 따라 배치가 바뀜
+  //  넓은 화면: 한 줄(점수 · 스테이지 · 생명) / 조금 좁은 가로: 한 줄을 줄여서 / 세로: 두 줄(점수·생명 / 스테이지)
+  hudLayout() {
+    const W = this.W, H = this.H, ONE = 1300;
+    if (W >= ONE) return { s: 1, two: false };
+    if (W >= H) return { s: W / ONE, two: false };
+    return { s: Math.min(1, W / 760), two: true };
+  }
   _drawHud(c, now) {
-    const W = this.W;
-    // 점수
-    this._panel(c, 16, 14, 330, 116, 26);
-    this._text(c, '점수', 42, 50, 28, '#7a6b8f', 'left', 800);
-    this._text(c, formatNum(this.score), 42, 98, 58, INK, 'left');
-    if (this.combo >= 2 && this.state === 'play') this._text(c, `콤보 x${this.combo}`, 330, 50, 28, '#ff6b6b', 'right', 900);
-    // 생명
-    const step = 68, hw = step * RULES.LIVES + 28;
-    this._panel(c, W - hw - 16, 14, hw, 132, 26);
+    const { s, two } = this.hudLayout(), VW = this.W / s;
+    const hw = 68 * RULES.LIVES + 28;
+    c.save(); c.scale(s, s);
+    this._hudScore(c, 16, 14);
+    this._hudLives(c, VW - hw - 16, 14, hw, now);
+    this._hudStage(c, VW / 2, two ? 14 + 132 + 14 : 14);
+    c.restore();
+  }
+  _hudScore(c, x, y) {
+    this._panel(c, x, y, 330, 116, 26);
+    this._text(c, '점수', x + 26, y + 36, 28, '#7a6b8f', 'left', 800);
+    this._text(c, formatNum(this.score), x + 26, y + 84, 58, INK, 'left');
+    if (this.combo >= 2 && this.state === 'play') this._text(c, `콤보 x${this.combo}`, x + 314, y + 36, 28, '#ff6b6b', 'right', 900);
+  }
+  _hudLives(c, x0, y0, hw, now) {
+    const step = 68;
+    this._panel(c, x0, y0, hw, 132, 26);
     for (let i = 0; i < RULES.LIVES; i++) {
-      const x = W - hw - 16 + 48 + i * step, y = 58, on = i < this.lives;
+      const x = x0 + 48 + i * step, y = y0 + 44, on = i < this.lives;
       const s = on && i === this.lives - 1 && this.lives <= 2 ? 1 + 0.08 * Math.sin(now / 120) : 1;
       this._heart(c, x, y, 31 * s, on ? '#ff4d6d' : 'rgba(120,110,140,0.35)');
     }
     // 놓침 칸: 다 차면 생명 −1
-    const per = this.diff.missPerHeart, px = W - hw - 16 + 26, py = 112;
+    const per = this.diff.missPerHeart, px = x0 + 26, py = y0 + 98;
     this._text(c, '놓침', px, py, 22, '#7a6b8f', 'left', 800);
     const gx = px + 70, gw = hw - 70 - 46, gap = gw / per;
     const danger = this.missCount === per - 1;
@@ -543,16 +577,17 @@ export class Engine {
       c.fillStyle = on ? '#ff6b6b' : (danger ? '#ffd6dc' : '#ece4f7'); c.fill();
       c.lineWidth = 2.5; c.strokeStyle = on ? INK : '#cfc3e0'; c.stroke();
     }
-    // 스테이지·남은 시간·레벨
-    const cx = W / 2, pw = 490;
-    this._panel(c, cx - pw / 2, 14, pw, 112, 26);
+  }
+  _hudStage(c, cx, y0) {
+    const pw = 490;
+    this._panel(c, cx - pw / 2, y0, pw, 112, 26);
     const baby = this.difficulty === 'baby' ? '🍼 ' : '';
-    this._text(c, `${baby}${this.stage?.emoji || ''}${this.stage?.vkey !== 'day' ? this.stage?.variation?.emoji || '' : ''} 스테이지 ${this.stageNum}`, cx, 52, 36);
+    this._text(c, `${baby}${this.stage?.emoji || ''}${this.stage?.vkey !== 'day' ? this.stage?.variation?.emoji || '' : ''} 스테이지 ${this.stageNum}`, cx, y0 + 38, 36);
     const remainSec = Math.max(0, Math.ceil(RULES.STAGE_SEC - this.stageT));
-    this._text(c, `남은 ${remainSec}초 · Lv.${this.level}`, cx, 92, 27, remainSec <= 10 && this.rest <= 0 ? '#e8505a' : '#7a6b8f', 'center', 800);
+    this._text(c, `남은 ${remainSec}초 · Lv.${this.level}`, cx, y0 + 78, 27, remainSec <= 10 && this.rest <= 0 ? '#e8505a' : '#7a6b8f', 'center', 800);
     const k = clamp(this.stageT / RULES.STAGE_SEC, 0, 1);
-    c.fillStyle = '#ece4f7'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, 110, pw - 44, 8, 4); c.fill();
-    c.fillStyle = k > 0.8 ? '#ff6b6b' : '#3ecfb2'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, 110, (pw - 44) * k, 8, 4); c.fill();
+    c.fillStyle = '#ece4f7'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, y0 + 96, pw - 44, 8, 4); c.fill();
+    c.fillStyle = k > 0.8 ? '#ff6b6b' : '#3ecfb2'; c.beginPath(); c.roundRect(cx - pw / 2 + 22, y0 + 96, (pw - 44) * k, 8, 4); c.fill();
   }
 
   // 카메라 바로 앞에 붙은 사람에게 말풍선
@@ -580,9 +615,11 @@ export class Engine {
   }
 
   _drawLobby(c, now) {
-    const W = this.W, H = this.H, st = this.stage, inp = this.input;
-    this._panel(c, W / 2 - 320, 22, 640, 96, 48);
-    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.fullName || st.name}`, W / 2, 70, 44);
+    const W = this.W, H = this.H, st = this.stage, inp = this.input, us = this.uiScale;
+    c.save(); c.translate(W / 2, 0); c.scale(us, us);
+    this._panel(c, -320, 22, 640, 96, 48);
+    this._text(c, `${this.difficulty === 'baby' ? '🍼 ' : ''}${st.emoji} 스테이지 1 · ${st.fullName || st.name}`, 0, 70, 44);
+    c.restore();
     const B = this.lobbyBubble();
     const bob = Math.sin(now / 400) * 8;
     c.save(); c.translate(B.x, B.y + bob);
@@ -606,24 +643,30 @@ export class Engine {
       else msg = inp.poseOk ? `${inp.people}명 인식! 손을 들어 노란 풍선을 터치하면 시작` : '준비 완료! 노란 풍선을 손으로 터치하면 시작해요';
     }
     else msg = '풍선을 눌러서 시작! (터치 모드)';
-    const tw = Math.min(W - 80, msg.length * 34 + 90);
-    this._panel(c, W / 2 - tw / 2, H - 116, tw, 84, 42, 'rgba(255,255,255,0.94)');
-    this._text(c, msg, W / 2, H - 74, 34);
+    const tw = Math.min(W / us - 60, msg.length * 34 + 90);
+    c.save(); c.translate(W / 2, H); c.scale(us, us);
+    this._panel(c, -tw / 2, -116, tw, 84, 42, 'rgba(255,255,255,0.94)');
+    this._text(c, msg, 0, -74, 34);
+    c.restore();
   }
 
   _drawCountdown(c) {
     const n = Math.ceil(this.countT), f = this.countT - Math.floor(this.countT);
     const s = 1 + (1 - f) * 0.15 + easeOutBack(Math.min(1, (1 - f) * 3)) * 0.2;
-    c.save(); c.translate(this.W / 2, this.H / 2); c.scale(s, s);
+    const us = this.uiScale;
+    c.save(); c.translate(this.W / 2, this.H / 2); c.scale(us, us);
+    c.save(); c.scale(s, s);
     this._text(c, String(n), 0, 0, 220, '#ffd93d', 'center', 900, INK);
     c.restore();
-    this._text(c, '준비~', this.W / 2, this.H / 2 + 150, 46, '#fff', 'center', 900, INK);
+    this._text(c, '준비~', 0, 150, 46, '#fff', 'center', 900, INK);
+    c.restore();
   }
 
   _drawBanner(c) {
     const b = this.banner, k = b.t / b.max;
     const s = easeOutBack(Math.min(1, k * 4)), a = 1 - Math.max(0, (k - 0.7) / 0.3);
-    c.save(); c.globalAlpha = a; c.translate(this.W / 2, this.H * 0.4); c.scale(s, s);
+    const us = this.uiScale;
+    c.save(); c.globalAlpha = a; c.translate(this.W / 2, this.H * 0.4); c.scale(s * us, s * us);
     this._text(c, b.text, 0, 0, 88, '#ffd93d', 'center', 900, INK);
     if (b.sub) this._text(c, b.sub, 0, 82, 44, '#ffffff', 'center', 900, INK);
     c.restore();
@@ -631,8 +674,11 @@ export class Engine {
 
   _drawAbsent(c) {
     c.fillStyle = 'rgba(20,10,50,0.45)'; c.fillRect(0, 0, this.W, this.H);
-    this._panel(c, this.W / 2 - 340, this.H / 2 - 80, 680, 160, 40);
-    this._text(c, '사람이 안 보여요!', this.W / 2, this.H / 2 - 28, 48, '#ff4d6d');
-    this._text(c, '화면 안으로 들어오면 이어서 해요', this.W / 2, this.H / 2 + 32, 32);
+    const us = this.uiScale;
+    c.save(); c.translate(this.W / 2, this.H / 2); c.scale(us, us);
+    this._panel(c, -340, -80, 680, 160, 40);
+    this._text(c, '사람이 안 보여요!', 0, -28, 48, '#ff4d6d');
+    this._text(c, '화면 안으로 들어오면 이어서 해요', 0, 32, 32);
+    c.restore();
   }
 }

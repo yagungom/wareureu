@@ -211,7 +211,8 @@ export class TouchInput {
     this.coverage = 0; this.colProfile = new Float32Array(32);
     const toLocal = (e) => {
       const r = canvas.getBoundingClientRect();
-      return { x: (e.clientX - r.left) / r.width * this.W, y: (e.clientY - r.top) / r.height * this.H };
+      // 캔버스 크기는 화면비에 따라 바뀔 수 있어 매번 실제 크기로 환산
+      return { x: (e.clientX - r.left) / r.width * canvas.width, y: (e.clientY - r.top) / r.height * canvas.height };
     };
     this._down = (e) => { const q = toLocal(e), now = performance.now(); this.pointers.set(e.pointerId, { ...q, px: q.x, py: q.y, t: now, mt: now, up: 0 }); };
     this._move = (e) => {
