@@ -87,11 +87,22 @@ export class Engine {
 
   // ── 메인 루프 ──
   _frame = (now) => {
-    const dt = Math.min(0.05, (now - this._last) / 1000);
+    const raw = (now - this._last) / 1000;
+    const dt = Math.min(0.05, raw);
     this._last = now;
+    this._watchFps(raw, now);
     try { this.update(dt, now); this.render(now); } catch (e) { console.error(e); }
     this._raf = requestAnimationFrame(this._frame);
   };
+
+  // 화면이 버벅이면(초당 40프레임 미만이 3초) 카메라 합성을 가벼운 방식으로 바꿈
+  _watchFps(raw, now) {
+    if (raw > 0 && raw < 0.5) this._fpsEma = this._fpsEma ? this._fpsEma * 0.95 + (1 / raw) * 0.05 : 1 / raw;
+    const inp = this.input;
+    if (!(inp?.kind === 'camera' && inp.live && ['lobby', 'countdown', 'play'].includes(this.state))) { this._slowSince = 0; return; }
+    if (this._fpsEma < 40) { if (!this._slowSince) this._slowSince = now; else if (now - this._slowSince > 3000) { inp.blockLive(); this._slowSince = 0; } }
+    else this._slowSince = 0;
+  }
 
   // 화면이 가려졌다 돌아오면 그려둔 이미지 전부 새로 (안드로이드 메모리 정리 대비)
   rebuildGraphics() {
@@ -406,7 +417,7 @@ export class Engine {
 
     const inp = this.input;
     const showPerson = this.state !== 'title' && inp?.kind === 'camera' && inp.hasFrame;
-    if (showPerson) c.drawImage(inp.person, 0, 0, W, H);
+    if (showPerson) { inp.updatePerson?.(); c.drawImage(inp.person, 0, 0, W, H); }
     if (showPerson && inp.poseOk) this._drawHands(c, now);
 
     for (const it of this.items) this._drawItem(c, it, now);
@@ -421,9 +432,9 @@ export class Engine {
     if (inp?.kind === 'camera' && inp.close?.on && ['lobby', 'countdown', 'play'].includes(this.state) && !this.absent) this._drawTooClose(c, now);
     if (this.banner) this._drawBanner(c);
     if (this.debug && inp?.kind === 'camera') {
-      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 260, 132, 520, 26);
+      c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(W / 2 - 400, 132, 800, 26);
       c.fillStyle = '#fff'; c.font = `600 16px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(`인식 ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate}/${inp.poseDelegate}${inp.threaded ? ' · 별도처리' : ''} · ${inp.people}명 손${inp.hands.length}`, W / 2, 145);
+      c.fillText(`화면 ${Math.round(this._fpsEma || 0)}fps · 인식 ${inp.fps.toFixed(0)}fps · 분리 ${inp.segMs.toFixed(0)}ms · 자세 ${inp.poseMs.toFixed(0)}ms · ${inp.delegate}/${inp.poseDelegate}${inp.threaded ? ' · 별도처리' : ' · 화면처리'} · ${inp.live ? '영상부드럽게' : '영상가볍게'} · ${inp.people}명 손${inp.hands.length}`, W / 2, 145);
     }
   }
 
@@ -502,7 +513,12 @@ export class Engine {
   // 인식된 손 표시: 아이들이 '내 손'이 어디인지 보이게 (잡기는 손으로만)
   _drawHands(c, now) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 160);
-    for (const h of this.input.hands) {
+    // 인식이 느린 폰에서도 손 표시가 툭툭 튀지 않게 화면에서는 부드럽게 따라가게 (판정은 실제 위치로)
+    const hs = this.input.hands, vz = this._handViz || (this._handViz = []);
+    const k = 1 - Math.exp(-Math.min(0.1, (now - (this._handT || now)) / 1000) * 22); this._handT = now;
+    if (vz.length !== hs.length) { vz.length = 0; for (const h of hs) vz.push({ x: h.x, y: h.y, r: h.r }); }
+    else hs.forEach((h, i) => { const v = vz[i]; v.x += (h.x - v.x) * k; v.y += (h.y - v.y) * k; v.r = h.r; });
+    for (const h of vz) {
       c.fillStyle = 'rgba(255,255,255,0.16)'; c.beginPath(); c.arc(h.x, h.y, h.r, 0, TAU); c.fill();
       c.lineWidth = 4 + pulse * 2; c.strokeStyle = 'rgba(255,217,61,0.9)'; c.stroke();
       c.save(); c.translate(h.x, h.y); c.rotate(now / 600);

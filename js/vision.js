@@ -26,6 +26,10 @@ export class CameraVision {
     this.pctx = this.person.getContext('2d');
     this.frameCv = document.createElement('canvas'); this.frameCv.width = this.W; this.frameCv.height = this.H;
     this.fctx = this.frameCv.getContext('2d');
+    // 사람 합성 방식: true = 영상은 매 프레임(부드러움) / false = 인식된 프레임만(가벼움)
+    //  인식이 아주 느리면(초당 7번 미만) 영상과 사람 모양이 어긋나 보여서 가벼운 방식으로, 다시 빨라지면(10번 이상) 부드럽게
+    //  화면 자체가 버벅이는 기기는 계속 가벼운 방식 (liveBlocked)
+    this.live = true; this.liveBlocked = false;
     this.stream = null; this.running = false;
     this.coverage = 0; this.colProfile = new Float32Array(32);
     this.segMs = 0; this.poseMs = 0; this.fps = 0; this._fpsT = performance.now(); this._fpsN = 0;
@@ -111,7 +115,7 @@ export class CameraVision {
     this.running = false;
     if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
     this.video.srcObject = null;
-    this.coverage = 0; this.hasFrame = false; this.hands = []; this.people = 0; this.lastRgba = null;
+    this.coverage = 0; this.hasFrame = false; this.hands = []; this.people = 0; this.lastRgba = null; this.fps = 0;
     this.close = { on: false, x: 0, y: 0, ratio: 0 };
   }
 
@@ -127,17 +131,9 @@ export class CameraVision {
     if (!this.running || !v.videoWidth || !this.engineReady) return;
     // 이전 프레임을 아직 처리 중이면 이번 프레임은 건너뜀 (밀리지 않게)
     if (this.busy) { if (performance.now() - this.busySince < 1500) return; this.busy = false; }
-    const { W, H } = this;
-    // 16:9 로 가운데 잘라내기(cover) + 거울 반전 → 이 프레임에 맞는 마스크가 오면 합성
-    const vr = v.videoWidth / v.videoHeight, tr = W / H;
-    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
-    if (vr > tr) { sw = sh * tr; sx = (v.videoWidth - sw) / 2; } else { sh = sw / tr; sy = (v.videoHeight - sh) / 2; }
-    const f = this.fctx;
-    f.save(); f.globalCompositeOperation = 'copy';
-    if (this.mirror) { f.translate(W, 0); f.scale(-1, 1); }
-    f.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
-    f.restore();
-    this.sctx.drawImage(this.frameCv, 0, 0, this.PW, this.PH);
+    // 16:9 로 가운데 잘라내기(cover) + 거울 반전 → 인식용 작은 프레임
+    if (this.live) this._drawVideo(this.sctx, this.PW, this.PH);
+    else { this._drawVideo(this.fctx, this.W, this.H); this.sctx.drawImage(this.frameCv, 0, 0, this.PW, this.PH); }
     this.busy = true; this.busySince = performance.now();
     if (this.worker) {
       createImageBitmap(this.small).then((bmp) => {
@@ -154,14 +150,9 @@ export class CameraVision {
     this.busy = false;
     if (!this.running) return;
     if (r.rgba) {
-      const { W, H } = this;
       this.mctx.putImageData(new ImageData(r.rgba, this.SW, this.SH), 0, 0);
-      const p = this.pctx;
-      p.globalCompositeOperation = 'copy'; p.drawImage(this.frameCv, 0, 0);
-      p.globalCompositeOperation = 'destination-in';
-      p.imageSmoothingEnabled = true; p.imageSmoothingQuality = 'high';
-      p.drawImage(this.maskCv, 0, 0, W, H);
-      p.globalCompositeOperation = 'source-over';
+      this._maskDirty = true;
+      if (!this.live) this._composite(this.frameCv);
       this.lastRgba = r.rgba; this.coverage = r.coverage; this.colProfile = r.cols; this.hasFrame = true;
     }
     this.hands = r.hands || []; this.people = r.people || 0;
@@ -169,7 +160,49 @@ export class CameraVision {
     this.segMs = r.segMs || 0; this.poseMs = r.poseMs || 0;
     this.poseDbg = r.poseDbg;
     this._fpsN++; const now = performance.now();
-    if (now - this._fpsT > 1000) { this.fps = this._fpsN * 1000 / (now - this._fpsT); this._fpsN = 0; this._fpsT = now; }
+    if (now - this._fpsT > 1000) {
+      this.fps = this._fpsN * 1000 / (now - this._fpsT); this._fpsN = 0; this._fpsT = now;
+      if (this.hasFrame) {
+        if (this.live && this.fps < 7) this.setLive(false);
+        else if (!this.live && !this.liveBlocked && this.fps >= 10) this.setLive(true);
+      }
+    }
+  }
+
+  // 카메라 영상을 16:9 로 잘라(가운데) 좌우 반전해서 그리기
+  _drawVideo(ctx, w, h) {
+    const v = this.video, tr = this.W / this.H, vr = v.videoWidth / v.videoHeight;
+    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+    if (vr > tr) { sw = sh * tr; sx = (v.videoWidth - sw) / 2; } else { sh = sw / tr; sy = (v.videoHeight - sh) / 2; }
+    ctx.save(); ctx.globalCompositeOperation = 'copy';
+    if (this.mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, w, h);
+    ctx.restore();
+  }
+
+  // 사람 합성: 카메라 영상은 새 프레임마다(초당 30번) 바로 쓰고, 사람 모양(마스크)만 인식될 때마다 바꿈
+  //  → 인식이 느린 폰에서도 사람이 뚝뚝 끊기지 않고 부드럽게 움직임
+  updatePerson() {
+    if (!this.live || !this.running || !this.hasFrame || !this.video.videoWidth) return;
+    const t = this.video.currentTime;
+    if (t === this._liveT && !this._maskDirty) return;
+    this._liveT = t; this._maskDirty = false;
+    this._composite(null);
+  }
+  blockLive() { this.liveBlocked = true; this.setLive(false); }
+  // 인식된 프레임에만 합성하는 가벼운 방식 ↔ 매 프레임 부드러운 방식
+  setLive(on) {
+    if (this.live === on) return;
+    this.live = on; this._maskDirty = true;
+    console.info('[camera] 사람 합성 방식:', on ? '부드럽게(매 프레임)' : '가볍게(인식된 프레임만)');
+  }
+  _composite(frame) {
+    const p = this.pctx, { W, H } = this;
+    if (frame) { p.globalCompositeOperation = 'copy'; p.drawImage(frame, 0, 0); } else this._drawVideo(p, W, H);
+    p.globalCompositeOperation = 'destination-in';
+    p.imageSmoothingEnabled = true; p.imageSmoothingQuality = 'high';
+    p.drawImage(this.maskCv, 0, 0, W, H);
+    p.globalCompositeOperation = 'source-over';
   }
 
   // 화면 좌표(1280x720) 지점의 "사람일 정도" (자세 인식이 없을 때 대체 판정용)
