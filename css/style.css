@@ -134,6 +134,18 @@ h2 { margin: 0 0 calc(1 * var(--v)); font-size: 1.6em; font-weight: 900; }
 .cam-item.on small { color: var(--ink); }
 .cam-tip { margin: calc(0.8 * var(--v)) 0 0; color: var(--muted); font-weight: 700; font-size: 0.82em; line-height: 1.4; }
 
+/* 시작 테마 고르기 */
+.theme-picker { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: min(94%, calc(84 * var(--u))); max-height: 80%; display: flex; flex-direction: column; padding: calc(1.2 * var(--u)) calc(1.4 * var(--u)); pointer-events: auto; z-index: 3; }
+.theme-picker[hidden] { display: none; }
+.theme-picker-top { display: flex; align-items: center; justify-content: space-between; gap: calc(1 * var(--u)); margin-bottom: calc(0.8 * var(--v)); }
+.theme-picker-top .cam-picker-title { margin: 0; }
+.theme-grid { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(9.6 * var(--u)), 1fr)); gap: calc(0.6 * var(--u)); padding: calc(0.3 * var(--u)); }
+.theme-tile { font: inherit; font-weight: 800; font-size: 0.82em; color: var(--ink); background: #fff; border: calc(0.2 * var(--u)) solid var(--ink); border-radius: calc(1.1 * var(--u)); padding: calc(0.4 * var(--u)) calc(0.2 * var(--u)) calc(0.3 * var(--u)); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.15em; line-height: 1.15; box-shadow: 0 calc(0.25 * var(--u)) 0 var(--ink); }
+.theme-tile img, .theme-tile .dice { width: 72%; aspect-ratio: 1; object-fit: contain; display: block; }
+.theme-tile .dice { font-size: 2.4em; display: grid; place-items: center; }
+.theme-tile[aria-pressed="true"] { background: var(--yellow); }
+.theme-tile:active { transform: translateY(calc(0.2 * var(--u))); box-shadow: none; }
+
 /* 구석 조작 버튼 */
 .corner-controls { position: absolute; bottom: calc(2.2 * var(--v)); display: flex; gap: calc(0.8 * var(--u)); }
 .corner-controls.left { left: calc(1.6 * var(--u)); }

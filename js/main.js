@@ -18,7 +18,7 @@ const sound = new Sound();
 const engine = new Engine(canvas, sound);
 
 // ── 설정 ──
-const DEFAULTS = { play: 'camera', facing: 'environment', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
+const DEFAULTS = { startTheme: 'random', play: 'camera', facing: 'environment', difficulty: 'normal', mirror: true, sfx: true, bgm: true, quality: 'high', cameraId: '', debug: false };
 const settings = { ...DEFAULTS, ...store.get('wc.settings.v1', {}) };
 if (settings.mode) { settings.facing = settings.mode === 'phone' ? 'user' : 'environment'; delete settings.mode; } // 예전 설정 이전
 const saveSettings = () => store.set('wc.settings.v1', settings);
@@ -240,15 +240,59 @@ $('#btn-cam-home').addEventListener('click', () => goTitle());
 // ── 대기실 ──
 async function enterLobby() {
   engine.setDifficulty(settings.difficulty);
+  engine.themeOffset = themeOffset(); // 랜덤이면 매판 다른 테마로
   engine.enterLobby();
+  renderThemeLabel(); toggleThemePicker(false);
   currentStage = engine.stage;
   $('#btn-cam-switch').hidden = engine.input?.kind !== 'camera'; // 폰 모드는 카메라를 안 씀
   show('lobby');
   sound.stopBgm();
   prepareStage(currentStage);
-  preloadTheme(themeForStage(2));
+  preloadTheme(engine.themeFor(2));
 }
-$('#btn-go').addEventListener('click', () => { sound.unlock(); toggleCamPicker(false); engine.startCountdown(); });
+$('#btn-go').addEventListener('click', () => { sound.unlock(); toggleCamPicker(false); toggleThemePicker(false); engine.startCountdown(); });
+
+// ── 시작 테마 고르기 (기본: 매판 랜덤) ──
+//  고른 테마부터 차례대로 이어지고, 스테이지 번호·속도·점수는 그대로 1부터 → 랭킹은 공평
+function themeOffset() {
+  if (settings.startTheme === 'random') return Math.floor(Math.random() * THEMES.length);
+  return Math.max(0, THEMES.findIndex((t) => t.key === settings.startTheme));
+}
+function renderThemeLabel() {
+  const t = THEMES.find((x) => x.key === settings.startTheme);
+  $('#btn-theme-label').textContent = t ? `${t.emoji} ${t.name}부터` : '🎨 테마: 랜덤';
+}
+function renderThemePicker() {
+  const grid = $('#theme-grid');
+  const tile = (key, label, art) => {
+    const b = el('button', { type: 'button', class: 'theme-tile', 'aria-pressed': String(settings.startTheme === key) }, art, el('span', { text: label }));
+    b.addEventListener('click', () => chooseTheme(key));
+    return b;
+  };
+  const items = [tile('random', '🎲 랜덤', el('span', { class: 'dice', text: '🎲' }))];
+  for (const t of THEMES) {
+    const img = el('img', { src: `assets/items/${t.key}/0.webp`, alt: '', loading: 'lazy', decoding: 'async' });
+    img.addEventListener('error', () => img.replaceWith(el('span', { class: 'dice', text: t.emoji })), { once: true });
+    items.push(tile(t.key, t.name, img));
+  }
+  grid.replaceChildren(...items);
+}
+function chooseTheme(key) {
+  settings.startTheme = key; saveSettings();
+  renderThemeLabel();
+  $$('#theme-grid .theme-tile').forEach((b, i) => b.setAttribute('aria-pressed', String((i === 0 ? 'random' : THEMES[i - 1].key) === key)));
+  engine.setStartTheme(themeOffset());
+  currentStage = engine.stage; prepareStage(currentStage); preloadTheme(engine.themeFor(2));
+  sound.unlock(); sound.tick?.();
+}
+function toggleThemePicker(open) {
+  const pk = $('#theme-picker'), btn = $('#btn-theme');
+  const showIt = open ?? pk.hidden;
+  if (showIt) { toggleCamPicker(false); renderThemePicker(); }
+  pk.hidden = !showIt; btn.setAttribute('aria-expanded', String(showIt));
+}
+$('#btn-theme').addEventListener('click', () => toggleThemePicker());
+$('#theme-close').addEventListener('click', () => toggleThemePicker(false));
 $('#btn-lobby-home').addEventListener('click', () => goTitle());
 // ── 카메라 고르기 (전면·후면·광각 등 모든 카메라) ──
 const FRONT_RE = /front|user|전면|facetime/i, BACK_RE = /back|rear|environment|후면/i;
@@ -290,7 +334,7 @@ function toggleCamPicker(open) {
   const pk = $('#cam-picker'), btn = $('#btn-cam-switch');
   const show = open ?? pk.hidden;
   pk.hidden = !show; btn.setAttribute('aria-expanded', String(show));
-  if (show) renderCamPicker();
+  if (show) { toggleThemePicker(false); renderCamPicker(); }
 }
 $('#btn-cam-switch').addEventListener('click', () => toggleCamPicker());
 
@@ -307,7 +351,7 @@ engine.on('countdown', () => {
 engine.on('stageStart', (n, theme) => {
   currentStage = theme;
   prepareStage(theme);
-  preloadTheme(themeForStage(n + 1));
+  preloadTheme(engine.themeFor(n + 1));
   sound.startBgm(theme.key2, tempoFor(engine.level));
 });
 engine.on('stageClear', () => sound.stopBgm());
@@ -339,7 +383,7 @@ const diffLabel = (d) => (d === 'baby' ? '🍼 아기 모드' : '🙂 일반');
 async function showResult(res) {
   lastResult = { ...res, team };
   addLocal({ team, mode: res.difficulty, score: res.score, catches: res.catches, catchPoints: res.catchPoints, misses: res.misses || 0, survivalMs: res.survivalMs, reachedStage: res.reachedStage, input: res.input });
-  const st = themeForStage(res.reachedStage);
+  const st = engine.themeFor(res.reachedStage);
   $('#res-team').textContent = team;
   $('#res-stage').textContent = `${st.emoji} 스테이지 ${res.reachedStage}까지 · ${diffLabel(res.difficulty)}`;
   $('#res-score').textContent = formatNum(res.score);

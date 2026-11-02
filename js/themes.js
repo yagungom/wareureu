@@ -124,17 +124,19 @@ export const STAGE_COUNT = THEMES.length * VARIATIONS.length; // 100
 
 const stageCache = new Map();
 // 스테이지 번호(1부터) → 테마+분위기. 101부터는 다시 1번 구성으로
-export function themeForStage(n) {
+//  offset: 시작 테마 (0 = 해변부터, 8 = 공룡 마을부터 …). 순서·분위기 진행·난이도는 그대로, 테마만 밀림
+export function themeForStage(n, offset = 0) {
   const idx = (Math.max(1, n) - 1) % STAGE_COUNT;
-  if (stageCache.has(idx)) return stageCache.get(idx);
-  const t = THEMES[idx % THEMES.length], v = VARIATIONS[Math.floor(idx / THEMES.length)];
+  const o = ((offset % THEMES.length) + THEMES.length) % THEMES.length, ck = `${idx}:${o}`;
+  if (stageCache.has(ck)) return stageCache.get(ck);
+  const t = THEMES[(idx + o) % THEMES.length], v = VARIATIONS[Math.floor(idx / THEMES.length)];
   const st = Object.freeze({
     ...t, id: idx + 1, variation: v, vkey: v.key, bgKey: `${t.key}:${v.key}`,
     ambient: v.ambient && !KEEP_AMBIENT.has(t.ambient) && (v.key === 'special' || t.ambient === 'none' || t.ambient === 'sparkle') ? v.ambient : t.ambient,
     key2: (t.key2 + v.keyShift + 12) % 12,
     fullName: v.key === 'day' ? t.name : `${t.name} · ${v.label}`,
   });
-  stageCache.set(idx, st);
+  stageCache.set(ck, st);
   return st;
 }
 

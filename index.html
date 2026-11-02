@@ -89,8 +89,17 @@
           <div class="cam-list" id="cam-list"></div>
           <p class="cam-tip">후면이 여러 개면 하나씩 눌러 보세요. 넓게 보이는 게 광각이라 온 가족이 같이 할 때 좋아요.</p>
         </div>
+        <div class="theme-picker card" id="theme-picker" hidden>
+          <div class="theme-picker-top">
+            <div class="cam-picker-title">어디서 시작할까요?</div>
+            <button type="button" class="btn btn-sm btn-primary" id="theme-close">고르기 끝</button>
+          </div>
+          <div class="theme-grid" id="theme-grid"></div>
+          <p class="cam-tip">고른 테마부터 차례대로 이어져요. 속도와 점수는 똑같이 스테이지 1부터라 랭킹은 공평해요.</p>
+        </div>
         <div class="corner-controls left">
           <button type="button" class="btn btn-round fs-btn" data-fs aria-label="전체화면"></button>
+          <button type="button" class="btn btn-pill btn-sm" id="btn-theme" aria-expanded="false"><span id="btn-theme-label">🎨 시작 테마</span></button>
           <button type="button" class="btn btn-pill btn-sm" id="btn-cam-switch" aria-expanded="false">📷 카메라 바꾸기</button>
           <button type="button" class="btn btn-round" id="btn-lobby-home" title="처음으로" aria-label="처음으로">✕</button>
         </div>
@@ -176,7 +185,7 @@
             <li><b>🙌 잡기</b> 화면에 노란 동그라미로 보이는 게 내 손이에요. 손으로 떨어지는 친구들을 잡거나 건드리면 점수!</li>
             <li><b>💣 피하기</b> 손으로 폭탄을 건드리면 생명이 하나 날아가요. 생명 5개가 다 없어지면 끝. 가끔 떨어지는 하트는 생명 +1!</li>
             <li><b>😢 놓치면</b> 친구가 바닥까지 떨어지면 −10점(아기 모드 −5점). 놓침 칸이 다 차면(5마리, 아기 모드 8마리) 생명 −1. 처음 5초(아기 모드 10초)는 봐줘요.</li>
-            <li><b>🗺️ 스테이지</b> 한 스테이지는 100초. 테마 25개(해변 → 바닷속 → 농장 …)가 낮 → 노을 → 밤 → 무지개 축제로 바뀌며 100스테이지까지 이어져요. 스테이지마다 떨어지는 친구들도 달라지고, 20초마다 빨라져요. 사이사이 3초 쉬어요.</li>
+            <li><b>🗺️ 스테이지</b> 한 스테이지는 100초. 테마 25개(해변 → 바닷속 → 농장 …)가 낮 → 노을 → 밤 → 무지개 축제로 바뀌며 100스테이지까지 이어져요. 스테이지마다 떨어지는 친구들도 달라지고, 20초마다 빨라져요. 사이사이 3초 쉬어요. 시작 테마는 매판 랜덤이고, 대기실의 🎨 버튼으로 고를 수도 있어요.</li>
             <li><b>🏆 점수</b> 친구 1마리 10점(연속으로 잡으면 최대 20점) − 놓친 감점 + 버틴 1초마다 3점 + 스테이지 클리어 보너스(스테이지 번호 × 100점). 0점 아래로는 안 내려가요.</li>
           </ol>
           <button type="button" class="btn btn-primary" id="help-back">알았어요!</button>

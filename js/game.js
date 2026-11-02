@@ -74,7 +74,13 @@ export class Engine {
   get uiScale() { return Math.min(1, this.W / 1100); }
 
   showTitle(stage) { this.setStage(stage); this.reset(); this.state = 'title'; this.spawnIn = 0.2; }
-  enterLobby() { this.setStage(themeForStage(1)); this.reset(); this.state = 'lobby'; this.emit('state', 'lobby'); }
+  enterLobby() { this.setStage(this.themeFor(1)); this.reset(); this.state = 'lobby'; this.emit('state', 'lobby'); }
+  // 시작 테마 (스테이지 번호·난이도·점수는 그대로라 랭킹은 공평)
+  themeFor(n) { return themeForStage(n, this.themeOffset || 0); }
+  setStartTheme(offset) {
+    this.themeOffset = offset;
+    if (this.state === 'lobby') this.setStage(this.themeFor(1), true);
+  }
 
   startCountdown() {
     if (this.state !== 'lobby') return;
@@ -221,7 +227,7 @@ export class Engine {
     this._switched = true;
     this.stageNum++; this.stageT = 0;
     this.level = this.levelFor(this.stageNum, 0);
-    this.setStage(themeForStage(this.stageNum), true);
+    this.setStage(this.themeFor(this.stageNum), true);
     this.banner = { text: `스테이지 ${this.stageNum}`, sub: `${this.stage.emoji} ${this.stage.fullName} · Lv.${this.level}`, t: 0, max: RULES.REST_SEC * 0.5 + 0.4 };
     this.emit('stageStart', this.stageNum, this.stage);
   }
@@ -660,7 +666,7 @@ export class Engine {
     }
     else msg = '풍선을 눌러서 시작! (터치 모드)';
     const tw = Math.min(W / us - 60, msg.length * 34 + 90);
-    c.save(); c.translate(W / 2, H); c.scale(us, us);
+    c.save(); c.translate(W / 2, H - (H > W ? 150 : 0)); c.scale(us, us); // 세로 화면은 아래 버튼과 안 겹치게 조금 위로
     this._panel(c, -tw / 2, -116, tw, 84, 42, 'rgba(255,255,255,0.94)');
     this._text(c, msg, 0, -74, 34);
     c.restore();
