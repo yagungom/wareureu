@@ -53,8 +53,11 @@
 
 | 종류 | 파일 | 설명 |
 |---|---|---|
-| 배경 | `assets/bg/<테마>.png` (jpg·webp 가능) | 낮 그림 1장. 노을·밤·축제는 게임이 색을 입혀 자동으로 만듦. 따로 만들고 싶으면 `<테마>-sunset.png` / `-night.png` / `-special.png` |
-| 스티커 시트 | `assets/items/<테마>.png` | 아이템 6개를 3칸 × 2줄로. 게임이 자동으로 잘라 씀 (투명 배경 권장, 흰 배경도 자동으로 지워 봄) |
+| 배경 | `assets/bg/<테마>.webp` (png·jpg도 가능) | 낮 그림 1장. 노을·밤·축제는 게임이 색을 입혀 자동으로 만듦. 따로 만들고 싶으면 `<테마>-sunset.png` / `-night.png` / `-special.png` |
+| 스티커 | `assets/items/<테마>/<0~5>.webp` | 미리 잘라 둔 아이템 6개 (가볍고 폰에서 자르는 시간이 없음) |
+| 스티커 시트 | `assets/items/<테마>.png` | 아이템 6개를 3칸 × 2줄로. 위의 잘라 둔 그림이 없으면 게임이 직접 잘라 씀 (투명 배경 권장, 흰 배경도 자동으로 지워 봄) |
+
+현재 25개 테마 50장 모두 들어가 있음 (2026-11-02, Codex의 내장 이미지 생성으로 제작). 원본 png 는 git 기록에 남아 있고, 저장소에는 배경 webp(장당 약 110KB)와 잘라 둔 스티커 webp(개당 약 20KB)만 둠.
 
 없는 테마는 코드로 그린 임시 배경과 이모지·손그림 스티커가 나옵니다. 테마 키: `beach sea farm city orchard forest bugs dessert dino sky jungle veggie snow toys sports music pets kitchen harbor construction garden park castle party space`
 

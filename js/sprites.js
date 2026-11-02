@@ -1,5 +1,6 @@
 // 떨어지는 친구들 그림
-//  1순위: ChatGPT 스티커 시트 assets/items/<테마>.png (자동으로 6개로 잘라 씀)
+//  1순위: 미리 잘라 둔 그림 assets/items/<테마>/<0~5>.webp
+//         없으면 스티커 시트 assets/items/<테마>.png 를 자동으로 6개로 잘라 씀
 //  2순위: 코드로 그린 오리지널 캐릭터 (DRAW)
 //  3순위: 이모지 스티커 (시트를 넣기 전 임시)
 // 160x160 디자인 좌표계, 중심 (80,80), 반지름 약 60 기준.
@@ -568,6 +569,15 @@ export function loadItemSheet(theme) {
   const key = t.key;
   if (sheets.has(key)) { const p = sheets.get(key); sheets.delete(key); sheets.set(key, p); return p; }
   const p = (async () => {
+    // 1순위: 미리 잘라 둔 개별 그림 assets/items/<테마>/<0~5>.webp (가볍고, 폰에서 자르는 시간이 없음)
+    const one = await Promise.all(t.items.map((it, i) => loadImage(`assets/items/${key}/${i}.webp`)));
+    if (sheets.get(key) !== p) return false;
+    if (one.some(Boolean)) {
+      let n = 0;
+      t.items.forEach((it, i) => { if (one[i]) { custom.set(it.id, fitPiece(one[i])); n++; } });
+      return n > 0;
+    }
+    // 2순위: 스티커 시트 assets/items/<테마>.png 를 여기서 잘라 씀
     const img = await loadImage(`assets/items/${key}.png`);
     if (!img || sheets.get(key) !== p) return false;
     let res;

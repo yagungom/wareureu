@@ -385,7 +385,7 @@ function applyVariation(c, W, H, vkey, seed, key) {
     for (let i = 0; i < 90; i++) { c.globalAlpha = 0.35 + r() * 0.6; c.beginPath(); c.arc(r() * W, r() * H * 0.45, 0.8 + r() * 1.8, 0, TAU); c.fill(); }
     c.globalAlpha = 1;
     const mx = W * 0.82, my = H * 0.16, mr = H * 0.07;
-    if (key !== 'space') {
+    if (key !== 'space' && key !== 'sea') { // 우주·바닷속에는 달을 띄우지 않음
     const g = c.createRadialGradient(mx, my, mr, mx, my, mr * 3.2); g.addColorStop(0, 'rgba(255,250,220,0.45)'); g.addColorStop(1, 'rgba(255,250,220,0)');
     c.fillStyle = g; c.fillRect(mx - mr * 4, my - mr * 4, mr * 8, mr * 8);
     c.fillStyle = '#fff6c9'; c.beginPath(); c.arc(mx, my, mr, 0, TAU); c.fill();
